@@ -59,9 +59,13 @@ MPU9250 myIMU(MPU9250_ADDRESS, I2Cport, I2Cclock);
 enum Mode {
   RUNNING,
   CAL_INIT,
-  CAL_GRAV_REF_READY
-  CAL_MOVING,
+  CAL_GRAV_REF_READY,
+  CAL_MOVING
 };
+
+char* modeNames[] = {"RUNNING", "CAL_INIT", "CAL_GRAV_REF_READY", "CAL_MOVING"};
+
+Mode mode = RUNNING;
 
 void setup()
 {
@@ -108,7 +112,6 @@ void setup()
     Serial.print(myIMU.selfTest[4], 1); Serial.println("% of factory value");
     Serial.print(F("z-axis self test: gyration trim within : "));
     Serial.print(myIMU.selfTest[5], 1); Serial.println("% of factory value");
-    delay(1000);
 
     // Calibrate gyro and accelerometers, load biases in bias registers
     myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
@@ -168,7 +171,7 @@ void setup()
     Serial.println(myIMU.magScale[0]);
     Serial.println(myIMU.magScale[1]);
     Serial.println(myIMU.magScale[2]);
-    delay(1000); // Add delay to see results before serial spew of data
+    //delay(1000); // Add delay to see results before serial spew of data
 
     if (SerialDebug)
     {
@@ -195,11 +198,131 @@ void setup()
 
 int buttonState = 0;
 
-void loop()
+void calibration()
 {
-  // SAM CODE
   buttonState = digitalRead(BUTTON_PIN);
-  if (buttonState == 0) {
+  if (buttonState == 1 && mode != CAL_INIT) {
+    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to CAL_INIT\n");
+    mode = CAL_INIT;
+    return;
+  }
+  switch (mode)
+  {
+    case RUNNING: running(); 
+    break;
+    case CAL_INIT: calInit();
+    break;
+    case CAL_GRAV_REF_READY: calGravRefReady();
+    break;
+    case CAL_MOVING: calMoving();
+    break;
+  }
+}
+
+double gravOffsetX = 0.0;
+double gravOffsetY = 0.0;
+double gravOffsetZ = 0.0;
+unsigned long time = 0;
+void calInit(){
+  digitalWrite(LEFT_LED_PIN, LOW);
+  digitalWrite(CENTER_LED_PIN, LOW);
+  digitalWrite(RIGHT_LED_PIN, LOW);
+  digitalWrite(LEFT_LED_PIN, HIGH);
+
+  delay(2000);
+  
+  gravOffsetX = myIMU.ax;
+  gravOffsetY = myIMU.ay;
+  gravOffsetZ = myIMU.az;
+
+  Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_GRAV_REF_READY]);Serial.print("\n");
+  mode = CAL_GRAV_REF_READY;
+}
+
+// Gravity corrected values
+double gCAX = 0.0;
+double gCAY = 0.0;
+double gCAZ = 0.0;
+double magnitude;
+unsigned long previousTime = 0;
+unsigned long movingStart = 0;
+void calGravRefReady(){
+  digitalWrite(LEFT_LED_PIN, LOW);
+  digitalWrite(CENTER_LED_PIN, LOW);
+  digitalWrite(RIGHT_LED_PIN, LOW);
+  digitalWrite(CENTER_LED_PIN, HIGH);
+
+  delay(100);
+
+  gCAX = myIMU.ax - gravOffsetX;
+  gCAY = myIMU.ay - gravOffsetY;
+  gCAZ = myIMU.az - gravOffsetZ;  
+
+  magnitude = sqrt((gCAX * gCAX) + (gCAY * gCAY) + (gCAZ * gCAZ));
+
+  Serial.print("current a magnitude: ");Serial.print(magnitude, 4);Serial.print("\n");
+
+  if (magnitude > 0.02) {
+    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_MOVING]);Serial.print("\n");
+    mode = CAL_MOVING;
+    previousTime = micros();
+    movingStart = previousTime;
+  }
+}
+
+// components of position and velocity vectors
+double pX = 0.0;
+double pY = 0.0;
+double pZ = 0.0;
+double vX = 0.0;
+double vY = 0.0;
+double vZ = 0.0;
+unsigned long now;
+unsigned long diff;
+void calMoving(){
+  digitalWrite(LEFT_LED_PIN, LOW);
+  digitalWrite(CENTER_LED_PIN, LOW);
+  digitalWrite(RIGHT_LED_PIN, LOW);
+  digitalWrite(RIGHT_LED_PIN, HIGH);
+
+  now = micros();
+  diff = now - previousTime;
+  previousTime = now;
+  
+  gCAX = myIMU.ax - gravOffsetX;
+  gCAY = myIMU.ay - gravOffsetY;
+  gCAZ = myIMU.az - gravOffsetZ;  
+
+  vX += (gCAX * (diff * 0.0000001));
+  vY += (gCAY * (diff * 0.0000001));
+  vZ += (gCAZ * (diff * 0.0000001));
+
+  pX += (vX * (diff * 0.0000001));
+  pY += (vY * (diff * 0.0000001));
+  pZ += (vZ * (diff * 0.0000001));
+
+  // run this stage for 5 seconds
+  if (now > (movingStart + (5000000))) {
+    magnitude = sqrt((pX * pX) + (pY * pY) + (pZ * pZ));
+    Serial.print("Start: ");Serial.print(movingStart);Serial.print("\n");
+    Serial.print("End: ");Serial.print(now);Serial.print("\n");
+    Serial.print("Moved a total of: ");Serial.print(pX, 6);Serial.print("x, ");
+    Serial.print(pY, 6);Serial.print("y, ");
+    Serial.print(pZ, 6);Serial.print("z\n");
+    Serial.print("Magnitude: ");Serial.print(magnitude, 6);Serial.print("\n");
+    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[RUNNING]);Serial.print("\n");
+    mode = RUNNING;
+  }
+}
+
+void running(){
+  blink_async();
+}
+
+void blink_async(){
+  time = micros();
+  if ((time / 1000000) % 2 == 0) 
+  {
     digitalWrite(LEFT_LED_PIN, LOW);
     digitalWrite(CENTER_LED_PIN, LOW);
     digitalWrite(RIGHT_LED_PIN, LOW);
@@ -208,7 +331,9 @@ void loop()
     digitalWrite(CENTER_LED_PIN, HIGH);
     digitalWrite(RIGHT_LED_PIN, HIGH);
   }
-  
+}
+
+void runPositionUpdate() {
   // If intPin goes high, all data registers have new data
   // On interrupt, check if data ready interrupt
   if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01)
@@ -299,7 +424,7 @@ void loop()
         // Print temperature in degrees Centigrade
         //       Serial.print("Temperature is ");  Serial.print(myIMU.temperature, 1);
         //       Serial.println(" degrees C");
-        delay(2000);
+        //delay(2000);
       }
       myIMU.count = millis();
       digitalWrite(myLed, !digitalRead(myLed));  // toggle led
@@ -366,7 +491,7 @@ void loop()
       myIMU.yaw   *= RAD_TO_DEG;
 
       // Declination of SparkFun Electronics (40°05'26.6"N 105°11'05.9"W) is
-      // 	8° 30' E  ± 0° 21' (or 8.5°) on 2016-07-19
+      //   8° 30' E  ± 0° 21' (or 8.5°) on 2016-07-19
       // - http://www.ngdc.noaa.gov/geomag-web/#declination
       //      myIMU.yaw  -= 8.5;
       myIMU.roll *= RAD_TO_DEG;
@@ -405,4 +530,11 @@ void loop()
       myIMU.sum = 0;
     } // if (myIMU.delt_t > 500)
   } // if (AHRS)
+}
+
+unsigned long lastLoop = 0;
+void loop()
+{  
+  runPositionUpdate();
+  calibration();
 }
