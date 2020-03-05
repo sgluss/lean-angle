@@ -197,13 +197,24 @@ void setup()
 }
 
 int buttonState = 0;
+int measureCount = 0;
 
+double gravX = 0.0;
+double gravY = 0.0;
+double gravZ = 0.0;
+
+unsigned long startOpAt = 0;
 void calibration()
 {
   buttonState = digitalRead(BUTTON_PIN);
   if (buttonState == 1 && mode != CAL_INIT) {
     Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to CAL_INIT\n");
     mode = CAL_INIT;
+    
+    startOpAt = (millis() + 2000);
+    gravX = 0.0;
+    gravY = 0.0;
+    gravZ = 0.0;
     return;
   }
   switch (mode)
@@ -219,9 +230,7 @@ void calibration()
   }
 }
 
-double gravOffsetX = 0.0;
-double gravOffsetY = 0.0;
-double gravOffsetZ = 0.0;
+double magnitude;
 unsigned long time = 0;
 void calInit(){
   digitalWrite(LEFT_LED_PIN, LOW);
@@ -229,21 +238,34 @@ void calInit(){
   digitalWrite(RIGHT_LED_PIN, LOW);
   digitalWrite(LEFT_LED_PIN, HIGH);
 
-  delay(2000);
-  
-  gravOffsetX = myIMU.ax;
-  gravOffsetY = myIMU.ay;
-  gravOffsetZ = myIMU.az;
+  if (millis() < startOpAt) {
+    return;
+  }
 
-  Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_GRAV_REF_READY]);Serial.print("\n");
-  mode = CAL_GRAV_REF_READY;
+  if (measureCount < 1000) {
+    gravX += myIMU.ax / 1000.0;
+    gravY += myIMU.ay / 1000.0;
+    gravZ += myIMU.az / 1000.0;
+    measureCount += 1;
+  } else {
+    measureCount = 0;
+
+    magnitude = sqrt((gravX * gravX) + (gravY * gravY) + (gravZ * gravZ));
+
+    Serial.print("Gravity magnitude: ");Serial.print(magnitude, 4);Serial.print("\n");
+    Serial.print("Gravity vector: ");Serial.print(gravX, 6);Serial.print("x, ");
+    Serial.print(gravY, 6);Serial.print("y, ");
+    Serial.print(gravZ, 6);Serial.print("z\n");
+    
+    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_GRAV_REF_READY]);Serial.print("\n");
+    mode = CAL_GRAV_REF_READY;
+  }
 }
 
 // Gravity corrected values
 double gCAX = 0.0;
 double gCAY = 0.0;
 double gCAZ = 0.0;
-double magnitude;
 unsigned long previousTime = 0;
 unsigned long movingStart = 0;
 void calGravRefReady(){
@@ -252,16 +274,17 @@ void calGravRefReady(){
   digitalWrite(RIGHT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, HIGH);
 
-  delay(100);
-
-  gCAX = myIMU.ax - gravOffsetX;
-  gCAY = myIMU.ay - gravOffsetY;
-  gCAZ = myIMU.az - gravOffsetZ;  
+  gCAX = myIMU.ax - gravX;
+  gCAY = myIMU.ay - gravY;
+  gCAZ = myIMU.az - gravZ;  
 
   magnitude = sqrt((gCAX * gCAX) + (gCAY * gCAY) + (gCAZ * gCAZ));
 
-  Serial.print("current a magnitude: ");Serial.print(magnitude, 4);Serial.print("\n");
-
+  // debug print accel magnitude
+  if (millis() % 20 == 0) {
+    Serial.print("current accel magnitude: ");Serial.print(magnitude, 4);Serial.print("\n");
+  }
+  
   if (magnitude > 0.02) {
     Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_MOVING]);Serial.print("\n");
     mode = CAL_MOVING;
@@ -289,9 +312,9 @@ void calMoving(){
   diff = now - previousTime;
   previousTime = now;
   
-  gCAX = myIMU.ax - gravOffsetX;
-  gCAY = myIMU.ay - gravOffsetY;
-  gCAZ = myIMU.az - gravOffsetZ;  
+  gCAX = myIMU.ax - gravX;
+  gCAY = myIMU.ay - gravY;
+  gCAZ = myIMU.az - gravZ;
 
   vX += (gCAX * (diff * 0.0000001));
   vY += (gCAY * (diff * 0.0000001));
