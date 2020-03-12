@@ -203,7 +203,7 @@ double gravX = 0.0;
 double gravY = 0.0;
 double gravZ = 0.0;
 
-unsigned long startOpAt = 0;
+unsigned long buttonPress = 0;
 void calibration()
 {
   buttonState = digitalRead(BUTTON_PIN);
@@ -211,7 +211,7 @@ void calibration()
     Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to CAL_INIT\n");
     mode = CAL_INIT;
     
-    startOpAt = (millis() + 2000);
+    buttonPress = millis();
     gravX = 0.0;
     gravY = 0.0;
     gravZ = 0.0;
@@ -238,7 +238,7 @@ void calInit(){
   digitalWrite(RIGHT_LED_PIN, LOW);
   digitalWrite(LEFT_LED_PIN, HIGH);
 
-  if (millis() < startOpAt) {
+  if (millis() - buttonPress < 2000) {
     return;
   }
 
@@ -343,8 +343,8 @@ void running(){
 }
 
 void blink_async(){
-  time = micros();
-  if ((time / 1000000) % 2 == 0) 
+  time = millis();
+  if ((time / 1000) % 2 == 0) 
   {
     digitalWrite(LEFT_LED_PIN, LOW);
     digitalWrite(CENTER_LED_PIN, LOW);
