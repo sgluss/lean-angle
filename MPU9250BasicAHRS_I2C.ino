@@ -230,6 +230,16 @@ void calibration()
   }
 }
 
+double xOffset = 0.0;
+double yOffset = 0.0;
+double zOffset = 0.0;
+void set_angle_offsets_for_gravity() {
+  xOffset = atan2(gravY, gravZ);
+  yOffset = atan2(gravX, gravZ);
+  Serial.print("X offset: ");Serial.print(xOffset, 6);Serial.print("\n");
+  Serial.print("Y offset: ");Serial.print(yOffset, 6);Serial.print("\n");
+}
+
 double magnitude;
 unsigned long time = 0;
 void calInit(){
@@ -256,6 +266,8 @@ void calInit(){
     Serial.print("Gravity vector: ");Serial.print(gravX, 6);Serial.print("x, ");
     Serial.print(gravY, 6);Serial.print("y, ");
     Serial.print(gravZ, 6);Serial.print("z\n");
+
+    set_angle_offsets_for_gravity();
     
     Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_GRAV_REF_READY]);Serial.print("\n");
     mode = CAL_GRAV_REF_READY;
@@ -334,8 +346,27 @@ void calMoving(){
     Serial.print(pZ, 6);Serial.print("z\n");
     Serial.print("Magnitude: ");Serial.print(magnitude, 6);Serial.print("\n");
     Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[RUNNING]);Serial.print("\n");
+    
     mode = RUNNING;
   }
+}
+
+void rotateAroundX(double& x1, double& x2, double& x3, double& theta) {
+  x1 = x1;
+  x2 = (cos(theta) * x2) - (sin(theta) * x3);
+  x3 = (sin(theta) * x2) + (cos(theta) * x3);
+}
+
+void rotateAroundY(double& x1, double& x2, double& x3, double& theta) {
+  x1 = (cos(theta) * x1) + (sin(theta) * x3);
+  x2 = x2;
+  x3 = (-sin(theta) * x1) + (cos(theta) * x3);
+}
+
+void rotateAroundZ(double& x1, double& x2, double& x3, double& theta) {
+  x1 = (cos(theta) * x1) - (sin(theta) * x2);
+  x2 = (sin(theta) * x1) + (cos(theta) * x2);
+  x3 = x3;
 }
 
 void running(){
@@ -510,6 +541,12 @@ void runPositionUpdate() {
                                   * *(getQ() + 3)), *getQ() * *getQ() - * (getQ() + 1)
                           * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) + * (getQ() + 3)
                           * *(getQ() + 3));
+      
+      myIMU.pitch -= xOffset;
+      myIMU.roll -= yOffset;
+      myIMU.yaw -= zOffset;
+
+      
       myIMU.pitch *= RAD_TO_DEG;
       myIMU.yaw   *= RAD_TO_DEG;
 
