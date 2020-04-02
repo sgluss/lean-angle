@@ -56,6 +56,51 @@ int RIGHT_LED_PIN = 10;
 
 MPU9250 myIMU(MPU9250_ADDRESS, I2Cport, I2Cclock);
 
+class Vector {
+  public:
+    float x, y, z;
+    Vector(float x, float y, float z) {
+      this->x = x;
+      this->y = y;
+      this->z = z;
+    }
+    float getMagnitude(){
+      return sqrt((x * x) + (y * y) + (z * z));
+    }
+};
+
+Vector* crossProduct(const float& x0, const float& y0, const float& z0, const float& x1, const float& y1, const float& z1) { 
+    Serial.print("Cross Product: "); Serial.print(x0, 6); Serial.print("x0, ");
+    Serial.print(y0, 6); Serial.print("y0, ");
+    Serial.print(z0, 6); Serial.print("z0\n");
+     Serial.print(x1, 6); Serial.print("x1, ");
+    Serial.print(y1, 6); Serial.print("y1, ");
+    Serial.print(z1, 6); Serial.print("z1\n");
+    
+    Vector* retVal = new Vector(0.0, 0.0, 0.0);
+    retVal->x = y0 * z1 - z0 * y1; 
+    retVal->y = z0 * x1 - x0 * z1; 
+    retVal->z = x0 * y1 - y0 * x1; 
+    return retVal;
+} 
+
+Vector* forwardsProjection = new Vector(0.0, 0.0, 0.0);
+// set projection of A onto B
+void setForwardsProjection(const float& xA, const float& yA, const float& zA, const float& xB, const float& yB, const float& zB) {
+    Serial.print("setting forwards projection: "); Serial.print(xA, 6); Serial.print("xA, ");
+    Serial.print(yA, 6); Serial.print("yA, ");
+    Serial.print(zA, 6); Serial.print("zA\n");
+    Serial.print(xB, 6); Serial.print("xB, ");
+    Serial.print(yB, 6); Serial.print("yB, ");
+    Serial.print(zB, 6); Serial.print("zB\n");
+    Vector* step1 = crossProduct(xA, yA, zA, xB, yB, zB);
+
+    Serial.print("Step1: "); Serial.print(step1->x, 6); Serial.print("x, ");
+    Serial.print(step1->y, 6); Serial.print("y, ");
+    Serial.print(step1->z, 6); Serial.print("z\n");
+    forwardsProjection = crossProduct(xB, yB, zB, step1->x, step1->y, step1->z);
+}
+
 enum Mode {
   RUNNING,
   CAL_INIT,
@@ -74,7 +119,7 @@ void setup()
   pinMode(CENTER_LED_PIN, OUTPUT);
   pinMode(RIGHT_LED_PIN, OUTPUT);
 
-  
+
   Wire.begin();
   // TWBR = 12;  // 400 kbit/sec I2C speed
   Serial.begin(115200);
@@ -208,9 +253,9 @@ void calibration()
 {
   buttonState = digitalRead(BUTTON_PIN);
   if (buttonState == 1 && mode != CAL_INIT) {
-    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to CAL_INIT\n");
+    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to CAL_INIT\n");
     mode = CAL_INIT;
-    
+
     buttonPress = millis();
     gravX = 0.0;
     gravY = 0.0;
@@ -219,14 +264,14 @@ void calibration()
   }
   switch (mode)
   {
-    case RUNNING: running(); 
-    break;
+    case RUNNING: running();
+      break;
     case CAL_INIT: calInit();
-    break;
+      break;
     case CAL_GRAV_REF_READY: calGravRefReady();
-    break;
+      break;
     case CAL_MOVING: calMoving();
-    break;
+      break;
   }
 }
 
@@ -236,13 +281,13 @@ double zOffset = 0.0;
 void set_angle_offsets_for_gravity() {
   xOffset = atan2(gravY, gravZ);
   yOffset = atan2(gravX, gravZ);
-  Serial.print("X offset: ");Serial.print(xOffset, 6);Serial.print("\n");
-  Serial.print("Y offset: ");Serial.print(yOffset, 6);Serial.print("\n");
+  Serial.print("X offset: "); Serial.print(xOffset, 6); Serial.print("\n");
+  Serial.print("Y offset: "); Serial.print(yOffset, 6); Serial.print("\n");
 }
 
 double magnitude;
 unsigned long time = 0;
-void calInit(){
+void calInit() {
   digitalWrite(LEFT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, LOW);
   digitalWrite(RIGHT_LED_PIN, LOW);
@@ -262,14 +307,14 @@ void calInit(){
 
     magnitude = sqrt((gravX * gravX) + (gravY * gravY) + (gravZ * gravZ));
 
-    Serial.print("Gravity magnitude: ");Serial.print(magnitude, 4);Serial.print("\n");
-    Serial.print("Gravity vector: ");Serial.print(gravX, 6);Serial.print("x, ");
-    Serial.print(gravY, 6);Serial.print("y, ");
-    Serial.print(gravZ, 6);Serial.print("z\n");
+    Serial.print("Gravity magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
+    Serial.print("Gravity vector: "); Serial.print(gravX, 6); Serial.print("x, ");
+    Serial.print(gravY, 6); Serial.print("y, ");
+    Serial.print(gravZ, 6); Serial.print("z\n");
 
     set_angle_offsets_for_gravity();
-    
-    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_GRAV_REF_READY]);Serial.print("\n");
+
+    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_GRAV_REF_READY]); Serial.print("\n");
     mode = CAL_GRAV_REF_READY;
   }
 }
@@ -280,7 +325,7 @@ double gCAY = 0.0;
 double gCAZ = 0.0;
 unsigned long previousTime = 0;
 unsigned long movingStart = 0;
-void calGravRefReady(){
+void calGravRefReady() {
   digitalWrite(LEFT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, LOW);
   digitalWrite(RIGHT_LED_PIN, LOW);
@@ -288,17 +333,17 @@ void calGravRefReady(){
 
   gCAX = myIMU.ax - gravX;
   gCAY = myIMU.ay - gravY;
-  gCAZ = myIMU.az - gravZ;  
+  gCAZ = myIMU.az - gravZ;
 
   magnitude = sqrt((gCAX * gCAX) + (gCAY * gCAY) + (gCAZ * gCAZ));
 
   // debug print accel magnitude
   if (millis() % 20 == 0) {
-    Serial.print("current accel magnitude: ");Serial.print(magnitude, 4);Serial.print("\n");
+    Serial.print("current accel magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
   }
-  
+
   if (magnitude > 0.02) {
-    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[CAL_MOVING]);Serial.print("\n");
+    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_MOVING]); Serial.print("\n");
     mode = CAL_MOVING;
     previousTime = micros();
     movingStart = previousTime;
@@ -314,7 +359,7 @@ double vY = 0.0;
 double vZ = 0.0;
 unsigned long now;
 unsigned long diff;
-void calMoving(){
+void calMoving() {
   digitalWrite(LEFT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, LOW);
   digitalWrite(RIGHT_LED_PIN, LOW);
@@ -323,7 +368,7 @@ void calMoving(){
   now = micros();
   diff = now - previousTime;
   previousTime = now;
-  
+
   gCAX = myIMU.ax - gravX;
   gCAY = myIMU.ay - gravY;
   gCAZ = myIMU.az - gravZ;
@@ -339,25 +384,31 @@ void calMoving(){
   // run this stage for 5 seconds
   if (now > (movingStart + (5000000))) {
     magnitude = sqrt((pX * pX) + (pY * pY) + (pZ * pZ));
-    Serial.print("Start: ");Serial.print(movingStart);Serial.print("\n");
-    Serial.print("End: ");Serial.print(now);Serial.print("\n");
-    Serial.print("Moved a total of: ");Serial.print(pX, 6);Serial.print("x, ");
-    Serial.print(pY, 6);Serial.print("y, ");
-    Serial.print(pZ, 6);Serial.print("z\n");
-    Serial.print("Magnitude: ");Serial.print(magnitude, 6);Serial.print("\n");
-    Serial.print("Mode switch from ");Serial.print(modeNames[mode]);Serial.print(" to ");Serial.print(modeNames[RUNNING]);Serial.print("\n");
-    
+    Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
+    Serial.print("End: "); Serial.print(now); Serial.print("\n");
+    Serial.print("Moved a total of: "); Serial.print(pX, 6); Serial.print("x, ");
+    Serial.print(pY, 6); Serial.print("y, ");
+    Serial.print(pZ, 6); Serial.print("z\n");
+    Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
+    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[RUNNING]); Serial.print("\n");
+
+    setForwardsProjection(pX, pY, pZ, gravX, gravY, gravZ);
+    Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardsProjection->x, 6); Serial.print("x, ");
+    Serial.print(forwardsProjection->y, 6); Serial.print("y, ");
+    Serial.print(forwardsProjection->z, 6); Serial.print("z\n");
+    Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
+        
     mode = RUNNING;
   }
 }
 
-void rotateAroundX(double& x1, double& x2, double& x3, double& theta) {
+void rotateAroundX(float& x1, float& x2, float& x3, double& theta) {
   x1 = x1;
   x2 = (cos(theta) * x2) - (sin(theta) * x3);
   x3 = (sin(theta) * x2) + (cos(theta) * x3);
 }
 
-void rotateAroundY(double& x1, double& x2, double& x3, double& theta) {
+void rotateAroundY(float& x1, float& x2, float& x3, double& theta) {
   x1 = (cos(theta) * x1) + (sin(theta) * x3);
   x2 = x2;
   x3 = (-sin(theta) * x1) + (cos(theta) * x3);
@@ -369,13 +420,13 @@ void rotateAroundZ(double& x1, double& x2, double& x3, double& theta) {
   x3 = x3;
 }
 
-void running(){
+void running() {
   blink_async();
 }
 
-void blink_async(){
+void blink_async() {
   time = millis();
-  if ((time / 1000) % 2 == 0) 
+  if ((time / 1000) % 2 == 0)
   {
     digitalWrite(LEFT_LED_PIN, LOW);
     digitalWrite(CENTER_LED_PIN, LOW);
@@ -386,6 +437,12 @@ void blink_async(){
     digitalWrite(RIGHT_LED_PIN, HIGH);
   }
 }
+
+float q1 = 0.0;
+float q2 = 0.0;
+float q3 = 0.0;
+float q4 = 0.0;
+void rotateAboutAxis(const double xx, const double yy, const double zz, const double angle) {}
 
 void runPositionUpdate() {
   // If intPin goes high, all data registers have new data
@@ -531,6 +588,12 @@ void runPositionUpdate() {
       // For more see
       // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
       // which has additional links.
+
+      q1 = *getQ();
+      q2 = *(getQ() + 1);
+      q3 = *(getQ() + 2);
+      q4 = *(getQ() + 3);
+
       myIMU.yaw   = atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ()
                                   * *(getQ() + 3)), *getQ() * *getQ() + * (getQ() + 1)
                           * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) - * (getQ() + 3)
@@ -541,12 +604,14 @@ void runPositionUpdate() {
                                   * *(getQ() + 3)), *getQ() * *getQ() - * (getQ() + 1)
                           * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) + * (getQ() + 3)
                           * *(getQ() + 3));
-      
-      myIMU.pitch -= xOffset;
-      myIMU.roll -= yOffset;
-      myIMU.yaw -= zOffset;
 
-      
+      //      myIMU.pitch -= xOffset;
+      //      myIMU.roll -= yOffset;
+      //      myIMU.yaw -= zOffset;
+      rotateAroundX(myIMU.pitch, myIMU.roll, myIMU.yaw, xOffset);
+      rotateAroundY(myIMU.pitch, myIMU.roll, myIMU.yaw, yOffset);
+
+
       myIMU.pitch *= RAD_TO_DEG;
       myIMU.yaw   *= RAD_TO_DEG;
 
@@ -594,7 +659,7 @@ void runPositionUpdate() {
 
 unsigned long lastLoop = 0;
 void loop()
-{  
+{
   runPositionUpdate();
   calibration();
 }
