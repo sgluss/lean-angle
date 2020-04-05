@@ -37,6 +37,13 @@
 #include "quaternionFilters.h"
 #include "MPU9250.h"
 
+#include <stlport.h>
+#include <Eigen30.h>
+#include <EigenAVR.h>
+#include <Eigen/Dense>
+
+using namespace Eigen;
+
 #define AHRS true         // Set to false for basic data read
 #define SerialDebug false  // Set to true to get Serial output for debugging
 
@@ -55,51 +62,6 @@ int RIGHT_LED_PIN = 10;
 //#define MPU9250_ADDRESS MPU9250_ADDRESS_AD1
 
 MPU9250 myIMU(MPU9250_ADDRESS, I2Cport, I2Cclock);
-
-class Vector {
-  public:
-    float x, y, z;
-    Vector(float x, float y, float z) {
-      this->x = x;
-      this->y = y;
-      this->z = z;
-    }
-    float getMagnitude(){
-      return sqrt((x * x) + (y * y) + (z * z));
-    }
-};
-
-Vector* crossProduct(const float& x0, const float& y0, const float& z0, const float& x1, const float& y1, const float& z1) { 
-    Serial.print("Cross Product: "); Serial.print(x0, 6); Serial.print("x0, ");
-    Serial.print(y0, 6); Serial.print("y0, ");
-    Serial.print(z0, 6); Serial.print("z0\n");
-     Serial.print(x1, 6); Serial.print("x1, ");
-    Serial.print(y1, 6); Serial.print("y1, ");
-    Serial.print(z1, 6); Serial.print("z1\n");
-    
-    Vector* retVal = new Vector(0.0, 0.0, 0.0);
-    retVal->x = y0 * z1 - z0 * y1; 
-    retVal->y = z0 * x1 - x0 * z1; 
-    retVal->z = x0 * y1 - y0 * x1; 
-    return retVal;
-} 
-
-Vector* forwardsProjection = new Vector(0.0, 0.0, 0.0);
-// set projection of A onto B
-void setForwardsProjection(const float& xA, const float& yA, const float& zA, const float& xB, const float& yB, const float& zB) {
-    Serial.print("setting forwards projection: "); Serial.print(xA, 6); Serial.print("xA, ");
-    Serial.print(yA, 6); Serial.print("yA, ");
-    Serial.print(zA, 6); Serial.print("zA\n");
-    Serial.print(xB, 6); Serial.print("xB, ");
-    Serial.print(yB, 6); Serial.print("yB, ");
-    Serial.print(zB, 6); Serial.print("zB\n");
-    Vector* step1 = crossProduct(xA, yA, zA, xB, yB, zB);
-
-    Serial.print("Step1: "); Serial.print(step1->x, 6); Serial.print("x, ");
-    Serial.print(step1->y, 6); Serial.print("y, ");
-    Serial.print(step1->z, 6); Serial.print("z\n");
-    forwardsProjection = crossProduct(xB, yB, zB, step1->x, step1->y, step1->z);
-}
 
 enum Mode {
   RUNNING,
@@ -244,10 +206,7 @@ void setup()
 int buttonState = 0;
 int measureCount = 0;
 
-double gravX = 0.0;
-double gravY = 0.0;
-double gravZ = 0.0;
-
+Vector3d grav;
 unsigned long buttonPress = 0;
 void calibration()
 {
@@ -257,9 +216,7 @@ void calibration()
     mode = CAL_INIT;
 
     buttonPress = millis();
-    gravX = 0.0;
-    gravY = 0.0;
-    gravZ = 0.0;
+    grav = Vector3d(0.0, 0.0, 0.0);
     return;
   }
   switch (mode)
@@ -275,14 +232,24 @@ void calibration()
   }
 }
 
-double xOffset = 0.0;
-double yOffset = 0.0;
-double zOffset = 0.0;
-void set_angle_offsets_for_gravity() {
-  xOffset = atan2(gravY, gravZ);
-  yOffset = atan2(gravX, gravZ);
-  Serial.print("X offset: "); Serial.print(xOffset, 6); Serial.print("\n");
-  Serial.print("Y offset: "); Serial.print(yOffset, 6); Serial.print("\n");
+float rotation_q1 = 0.0;
+float rotation_q2 = 0.0;
+float rotation_q3 = 0.0;
+float rotation_q4 = 0.0;
+void setRotationQuaternion(Vector3d right, Vector3d up, Vector3d forward) {
+  rotation_q1 = sqrt(1.0 + right[0] + up[1] + forward[2]) / 2.0;
+  double w4 = (4.0 * rotation_q1);
+  rotation_q2 = (forward[1] - up[2]) / w4 ;
+  rotation_q3 = (right[2] - forward[0]) / w4 ;
+  rotation_q4 = (up[0] - right[1]) / w4 ;
+}
+
+Vector3d rightVector;
+Vector3d forwardProjection;
+// set projection of A onto B
+void setForwardProjection(const Vector3d& up, const Vector3d& forward) {
+  rightVector = Vector3d(forward.cross(up));
+  forwardProjection = Vector3d(up.cross(rightVector));
 }
 
 double magnitude;
@@ -298,21 +265,19 @@ void calInit() {
   }
 
   if (measureCount < 1000) {
-    gravX += myIMU.ax / 1000.0;
-    gravY += myIMU.ay / 1000.0;
-    gravZ += myIMU.az / 1000.0;
+    grav[0] += myIMU.ax / 1000.0;
+    grav[1] += myIMU.ay / 1000.0;
+    grav[2] += myIMU.az / 1000.0;
     measureCount += 1;
   } else {
     measureCount = 0;
 
-    magnitude = sqrt((gravX * gravX) + (gravY * gravY) + (gravZ * gravZ));
+    magnitude = grav.norm();
 
     Serial.print("Gravity magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
-    Serial.print("Gravity vector: "); Serial.print(gravX, 6); Serial.print("x, ");
-    Serial.print(gravY, 6); Serial.print("y, ");
-    Serial.print(gravZ, 6); Serial.print("z\n");
-
-    set_angle_offsets_for_gravity();
+    Serial.print("Gravity vector: "); Serial.print(grav[0], 6); Serial.print("x, ");
+    Serial.print(grav[1], 6); Serial.print("y, ");
+    Serial.print(grav[2], 6); Serial.print("z\n");
 
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_GRAV_REF_READY]); Serial.print("\n");
     mode = CAL_GRAV_REF_READY;
@@ -320,9 +285,7 @@ void calInit() {
 }
 
 // Gravity corrected values
-double gCAX = 0.0;
-double gCAY = 0.0;
-double gCAZ = 0.0;
+Vector3d gravCorrected = Vector3d(0.0, 0.0, 0.0);
 unsigned long previousTime = 0;
 unsigned long movingStart = 0;
 void calGravRefReady() {
@@ -331,11 +294,11 @@ void calGravRefReady() {
   digitalWrite(RIGHT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, HIGH);
 
-  gCAX = myIMU.ax - gravX;
-  gCAY = myIMU.ay - gravY;
-  gCAZ = myIMU.az - gravZ;
+  gravCorrected[0] = myIMU.ax - grav[0];
+  gravCorrected[1] = myIMU.ay - grav[1];
+  gravCorrected[2] = myIMU.az - grav[2];
 
-  magnitude = sqrt((gCAX * gCAX) + (gCAY * gCAY) + (gCAZ * gCAZ));
+  magnitude = gravCorrected.norm();
 
   // debug print accel magnitude
   if (millis() % 20 == 0) {
@@ -351,12 +314,8 @@ void calGravRefReady() {
 }
 
 // components of position and velocity vectors
-double pX = 0.0;
-double pY = 0.0;
-double pZ = 0.0;
-double vX = 0.0;
-double vY = 0.0;
-double vZ = 0.0;
+Vector3d positionVector = Vector3d(0.0, 0.0, 0.0);
+Vector3d velocityVector = Vector3d(0.0, 0.0, 0.0);
 unsigned long now;
 unsigned long diff;
 void calMoving() {
@@ -369,56 +328,59 @@ void calMoving() {
   diff = now - previousTime;
   previousTime = now;
 
-  gCAX = myIMU.ax - gravX;
-  gCAY = myIMU.ay - gravY;
-  gCAZ = myIMU.az - gravZ;
+  gravCorrected[0] = myIMU.ax - grav[0];
+  gravCorrected[1] = myIMU.ay - grav[1];
+  gravCorrected[2] = myIMU.az - grav[2];
 
-  vX += (gCAX * (diff * 0.0000001));
-  vY += (gCAY * (diff * 0.0000001));
-  vZ += (gCAZ * (diff * 0.0000001));
+  velocityVector[0] += (gravCorrected[0] * (diff * 0.0000001));
+  velocityVector[1] += (gravCorrected[1] * (diff * 0.0000001));
+  velocityVector[2] += (gravCorrected[2] * (diff * 0.0000001));
 
-  pX += (vX * (diff * 0.0000001));
-  pY += (vY * (diff * 0.0000001));
-  pZ += (vZ * (diff * 0.0000001));
+  positionVector[0] += (velocityVector[0] * (diff * 0.0000001));
+  positionVector[1] += (velocityVector[1] * (diff * 0.0000001));
+  positionVector[2] += (velocityVector[2] * (diff * 0.0000001));
 
   // run this stage for 5 seconds
   if (now > (movingStart + (5000000))) {
-    magnitude = sqrt((pX * pX) + (pY * pY) + (pZ * pZ));
+    magnitude = sqrt((positionVector[0] * positionVector[0]) + (positionVector[1] * positionVector[1]) + (positionVector[2] * positionVector[2]));
     Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
     Serial.print("End: "); Serial.print(now); Serial.print("\n");
-    Serial.print("Moved a total of: "); Serial.print(pX, 6); Serial.print("x, ");
-    Serial.print(pY, 6); Serial.print("y, ");
-    Serial.print(pZ, 6); Serial.print("z\n");
+    Serial.print("Moved a total of: "); Serial.print(positionVector[0], 6); Serial.print("x, ");
+    Serial.print(positionVector[1], 6); Serial.print("y, ");
+    Serial.print(positionVector[2], 6); Serial.print("z\n");
     Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[RUNNING]); Serial.print("\n");
 
-    setForwardsProjection(pX, pY, pZ, gravX, gravY, gravZ);
-    Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardsProjection->x, 6); Serial.print("x, ");
-    Serial.print(forwardsProjection->y, 6); Serial.print("y, ");
-    Serial.print(forwardsProjection->z, 6); Serial.print("z\n");
+    setForwardProjection(grav, positionVector);
+    Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardProjection[0], 6); Serial.print("x, ");
+    Serial.print(forwardProjection[1], 6); Serial.print("y, ");
+    Serial.print(forwardProjection[2], 6); Serial.print("z\n");
     Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
-        
+
+    setRotationQuaternion(rightVector, grav, forwardProjection);
     mode = RUNNING;
   }
 }
 
-void rotateAroundX(float& x1, float& x2, float& x3, double& theta) {
+/* Unused code
+  void rotateAroundX(float& x1, float& x2, float& x3, double& theta) {
   x1 = x1;
   x2 = (cos(theta) * x2) - (sin(theta) * x3);
   x3 = (sin(theta) * x2) + (cos(theta) * x3);
-}
+  }
 
-void rotateAroundY(float& x1, float& x2, float& x3, double& theta) {
+  void rotateAroundY(float& x1, float& x2, float& x3, double& theta) {
   x1 = (cos(theta) * x1) + (sin(theta) * x3);
   x2 = x2;
   x3 = (-sin(theta) * x1) + (cos(theta) * x3);
-}
+  }
 
-void rotateAroundZ(double& x1, double& x2, double& x3, double& theta) {
+  void rotateAroundZ(double& x1, double& x2, double& x3, double& theta) {
   x1 = (cos(theta) * x1) - (sin(theta) * x2);
   x2 = (sin(theta) * x1) + (cos(theta) * x2);
   x3 = x3;
-}
+  }
+*/
 
 void running() {
   blink_async();
@@ -438,12 +400,14 @@ void blink_async() {
   }
 }
 
-float q1 = 0.0;
-float q2 = 0.0;
-float q3 = 0.0;
-float q4 = 0.0;
-void rotateAboutAxis(const double xx, const double yy, const double zz, const double angle) {}
-
+double q1;
+double q2;
+double q3;
+double q4;
+double resultQ1;
+double resultQ2;
+double resultQ3;
+double resultQ4;
 void runPositionUpdate() {
   // If intPin goes high, all data registers have new data
   // On interrupt, check if data ready interrupt
@@ -594,23 +558,23 @@ void runPositionUpdate() {
       q3 = *(getQ() + 2);
       q4 = *(getQ() + 3);
 
-      myIMU.yaw   = atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ()
-                                  * *(getQ() + 3)), *getQ() * *getQ() + * (getQ() + 1)
-                          * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) - * (getQ() + 3)
-                          * *(getQ() + 3));
-      myIMU.pitch = -asin(2.0f * (*(getQ() + 1) * *(getQ() + 3) - *getQ()
-                                  * *(getQ() + 2)));
-      myIMU.roll  = atan2(2.0f * (*getQ() * *(getQ() + 1) + * (getQ() + 2)
-                                  * *(getQ() + 3)), *getQ() * *getQ() - * (getQ() + 1)
-                          * *(getQ() + 1) - * (getQ() + 2) * *(getQ() + 2) + * (getQ() + 3)
-                          * *(getQ() + 3));
+      resultQ1 = ((q1 * rotation_q1) - (q2 * rotation_q2) - (q3 * rotation_q3) - (q4 * rotation_q4));
+      resultQ2 = ((q1 * rotation_q2) + (q2 * rotation_q1) + (q3 * rotation_q4) - (q4 * rotation_q3));
+      resultQ3 = ((q1 * rotation_q3) - (q2 * rotation_q4) + (q3 * rotation_q1) + (q4 * rotation_q2));
+      resultQ4 = ((q1 * rotation_q4) + (q2 * rotation_q3) - (q3 * rotation_q2) + (q4 * rotation_q1));
 
-      //      myIMU.pitch -= xOffset;
-      //      myIMU.roll -= yOffset;
-      //      myIMU.yaw -= zOffset;
-      rotateAroundX(myIMU.pitch, myIMU.roll, myIMU.yaw, xOffset);
-      rotateAroundY(myIMU.pitch, myIMU.roll, myIMU.yaw, yOffset);
+      /*
+        https://robotics.stackexchange.com/questions/15264/how-to-rotate-a-rotation-quaternion-in-the-body-frame-to-a-rotation-quaternion-i
+        TODO: here, multiply qs (starting orientation) by qr (rotation) to get qs1 (corrected orientation)
+        Create direction vector from: https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
+      */
 
+      myIMU.yaw   = atan2(2.0f * (resultQ2 * resultQ3 + resultQ1 * resultQ4), resultQ1 * resultQ1 + resultQ2
+                          * resultQ2 - resultQ3 * resultQ3 - resultQ4 * resultQ4);
+      myIMU.pitch = -asin(2.0f * (resultQ2 * resultQ4 - resultQ1 * resultQ3));
+      myIMU.roll  = atan2(2.0f * (resultQ1 * resultQ2 + resultQ3
+                                  * resultQ4), resultQ1 * resultQ1 - resultQ2
+                          * resultQ2 - resultQ3 * resultQ3 + resultQ4 * resultQ4);
 
       myIMU.pitch *= RAD_TO_DEG;
       myIMU.yaw   *= RAD_TO_DEG;
