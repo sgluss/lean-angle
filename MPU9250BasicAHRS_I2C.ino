@@ -103,22 +103,22 @@ void setup()
 
   if (c == 0x71) // WHO_AM_I should always be 0x71
   {
-    Serial.println(F("MPU9250 detected"));
+    Serial.println(F("MPU9250 is online..."));
 
     // Start by performing self test and reporting values
     myIMU.MPU9250SelfTest(myIMU.selfTest);
     Serial.print(F("x-axis self test: acceleration trim within : "));
-    Serial.print(myIMU.selfTest[0], 1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[0],1); Serial.println("% of factory value");
     Serial.print(F("y-axis self test: acceleration trim within : "));
-    Serial.print(myIMU.selfTest[1], 1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[1],1); Serial.println("% of factory value");
     Serial.print(F("z-axis self test: acceleration trim within : "));
-    Serial.print(myIMU.selfTest[2], 1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[2],1); Serial.println("% of factory value");
     Serial.print(F("x-axis self test: gyration trim within : "));
-    Serial.print(myIMU.selfTest[3], 1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[3],1); Serial.println("% of factory value");
     Serial.print(F("y-axis self test: gyration trim within : "));
-    Serial.print(myIMU.selfTest[4], 1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[4],1); Serial.println("% of factory value");
     Serial.print(F("z-axis self test: gyration trim within : "));
-    Serial.print(myIMU.selfTest[5], 1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[5],1); Serial.println("% of factory value");
 
     // Calibrate gyro and accelerometers, load biases in bias registers
     myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
@@ -126,21 +126,21 @@ void setup()
     myIMU.initMPU9250();
     // Initialize device for active mode read of acclerometer, gyroscope, and
     // temperature
-    //    Serial.println("MPU9250 initialized for active data mode....");
+    Serial.println("MPU9250 initialized for active data mode....");
 
     // Read the WHO_AM_I register of the magnetometer, this is a good test of
     // communication
     byte d = myIMU.readByte(AK8963_ADDRESS, WHO_AM_I_AK8963);
-    //    Serial.print("AK8963 ");
-    //    Serial.print("I AM 0x");
-    //    Serial.print(d, HEX);
-    //    Serial.print(" I should be 0x");
-    //    Serial.println(0x48, HEX);
+    Serial.print("AK8963 ");
+    Serial.print("I AM 0x");
+    Serial.print(d, HEX);
+    Serial.print(" I should be 0x");
+    Serial.println(0x48, HEX);
 
     if (d != 0x48)
     {
       // Communication failed, stop here
-      Serial.println(F("MPU-9250 not detected, abort!"));
+      Serial.println(F("Communication failed, abort!"));
       Serial.flush();
       abort();
     }
@@ -148,17 +148,17 @@ void setup()
     // Get magnetometer calibration from AK8963 ROM
     myIMU.initAK8963(myIMU.factoryMagCalibration);
     // Initialize device for active mode read of magnetometer
-    //    Serial.println("AK8963 initialized for active data mode....");
+    Serial.println("AK8963 initialized for active data mode....");
 
     if (SerialDebug)
     {
       //  Serial.println("Calibration values: ");
-      //      Serial.print("X-Axis factory sensitivity adjustment value ");
-      //      Serial.println(myIMU.factoryMagCalibration[0], 2);
-      //      Serial.print("Y-Axis factory sensitivity adjustment value ");
-      //      Serial.println(myIMU.factoryMagCalibration[1], 2);
-      //      Serial.print("Z-Axis factory sensitivity adjustment value ");
-      //      Serial.println(myIMU.factoryMagCalibration[2], 2);
+      Serial.print("X-Axis factory sensitivity adjustment value ");
+      Serial.println(myIMU.factoryMagCalibration[0], 2);
+      Serial.print("Y-Axis factory sensitivity adjustment value ");
+      Serial.println(myIMU.factoryMagCalibration[1], 2);
+      Serial.print("Z-Axis factory sensitivity adjustment value ");
+      Serial.println(myIMU.factoryMagCalibration[2], 2);
     }
 
     // Get sensor resolutions, only need to do this once
@@ -168,7 +168,7 @@ void setup()
 
     // The next call delays for 4 seconds, and then records about 15 seconds of
     // data to calculate bias and scale.
-    myIMU.magCalMPU9250(myIMU.magBias, myIMU.magScale);
+    //myIMU.magCalMPU9250(myIMU.magBias, myIMU.magScale);
     Serial.println("AK8963 mag biases (mG)");
     Serial.println(myIMU.magBias[0]);
     Serial.println(myIMU.magBias[1]);
@@ -178,16 +178,16 @@ void setup()
     Serial.println(myIMU.magScale[0]);
     Serial.println(myIMU.magScale[1]);
     Serial.println(myIMU.magScale[2]);
-    //delay(1000); // Add delay to see results before serial spew of data
+//    delay(2000); // Add delay to see results before serial spew of data
 
-    if (SerialDebug)
+    if(SerialDebug)
     {
       Serial.println("Magnetometer:");
-      Serial.print("X cal ");
+      Serial.print("X-Axis sensitivity adjustment value ");
       Serial.println(myIMU.factoryMagCalibration[0], 2);
-      Serial.print("Y cal ");
+      Serial.print("Y-Axis sensitivity adjustment value ");
       Serial.println(myIMU.factoryMagCalibration[1], 2);
-      Serial.print("Z cal ");
+      Serial.print("Z-Axis sensitivity adjustment value ");
       Serial.println(myIMU.factoryMagCalibration[2], 2);
     }
   } // if (c == 0x71)
@@ -207,6 +207,7 @@ int buttonState = 0;
 int measureCount = 0;
 
 Vector3d grav;
+Vector3d up;
 unsigned long buttonPress = 0;
 void calibration()
 {
@@ -232,16 +233,36 @@ void calibration()
   }
 }
 
-float rotation_q1 = 0.0;
-float rotation_q2 = 0.0;
-float rotation_q3 = 0.0;
-float rotation_q4 = 0.0;
-void setRotationQuaternion(Vector3d right, Vector3d up, Vector3d forward) {
-  rotation_q1 = sqrt(1.0 + right[0] + up[1] + forward[2]) / 2.0;
+Matrix3f rotationMatrix;
+void setRotationMatrix(Vector3d& right, Vector3d& up, Vector3d& forward) {  
+  right = -right;
+  
+  rotationMatrix << right[0], up[0], forward[0],
+                    right[1], up[1], forward[1],
+                    right[2], up[2], forward[2];
+  rotationMatrix.col(0).normalize();
+  rotationMatrix.col(1).normalize();
+  rotationMatrix.col(2).normalize();
+
+  Serial.print("Generated rotation matrix! Determinant: ");Serial.print(rotationMatrix.determinant());Serial.print("\n");
+}
+
+double rotation_q1 = 0.0;
+double rotation_q2 = 0.0;
+double rotation_q3 = 0.0;
+double rotation_q4 = 0.0;
+Quaterniond rotationQ = Quaterniond(1.0, 0.0, 0.0, 0.0);
+void setRotationQuaternion(Vector3d& right, Vector3d& up, Vector3d& forward) {
+  setRotationMatrix(right, up, forward);
+
+  Matrix3f mat = rotationMatrix;
+    
+  rotation_q1 = sqrt(1.0 + mat(0, 0) + mat(1, 1) + mat(2, 2)) / 2.0;
   double w4 = (4.0 * rotation_q1);
-  rotation_q2 = (forward[1] - up[2]) / w4 ;
-  rotation_q3 = (right[2] - forward[0]) / w4 ;
-  rotation_q4 = (up[0] - right[1]) / w4 ;
+  rotation_q2 = (mat(2, 1) - mat(1, 2)) / w4 ;
+  rotation_q3 = (mat(0, 2) - mat(2, 0)) / w4 ;
+  rotation_q4 = (mat(1, 0) - mat(0, 1)) / w4 ;
+  rotationQ = Quaterniond(rotation_q1, rotation_q2, rotation_q3, rotation_q4);
 }
 
 Vector3d rightVector;
@@ -271,13 +292,18 @@ void calInit() {
     measureCount += 1;
   } else {
     measureCount = 0;
-
+    up = -grav;
     magnitude = grav.norm();
 
     Serial.print("Gravity magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
     Serial.print("Gravity vector: "); Serial.print(grav[0], 6); Serial.print("x, ");
     Serial.print(grav[1], 6); Serial.print("y, ");
     Serial.print(grav[2], 6); Serial.print("z\n");
+
+    Serial.print("up magnitude: "); Serial.print(up.norm(), 4); Serial.print("\n");
+    Serial.print("up vector: "); Serial.print(up[0], 6); Serial.print("x, ");
+    Serial.print(up[1], 6); Serial.print("y, ");
+    Serial.print(up[2], 6); Serial.print("z\n");
 
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_GRAV_REF_READY]); Serial.print("\n");
     mode = CAL_GRAV_REF_READY;
@@ -340,8 +366,8 @@ void calMoving() {
   positionVector[1] += (velocityVector[1] * (diff * 0.0000001));
   positionVector[2] += (velocityVector[2] * (diff * 0.0000001));
 
-  // run this stage for 5 seconds
-  if (now > (movingStart + (5000000))) {
+  // run this stage for 3 seconds
+  if (now > (movingStart + (3000000))) {
     magnitude = sqrt((positionVector[0] * positionVector[0]) + (positionVector[1] * positionVector[1]) + (positionVector[2] * positionVector[2]));
     Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
     Serial.print("End: "); Serial.print(now); Serial.print("\n");
@@ -351,36 +377,16 @@ void calMoving() {
     Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[RUNNING]); Serial.print("\n");
 
-    setForwardProjection(grav, positionVector);
+    setForwardProjection(up, positionVector);
     Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardProjection[0], 6); Serial.print("x, ");
     Serial.print(forwardProjection[1], 6); Serial.print("y, ");
     Serial.print(forwardProjection[2], 6); Serial.print("z\n");
     Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
 
-    setRotationQuaternion(rightVector, grav, forwardProjection);
+    setRotationQuaternion(rightVector, up, forwardProjection);
     mode = RUNNING;
   }
 }
-
-/* Unused code
-  void rotateAroundX(float& x1, float& x2, float& x3, double& theta) {
-  x1 = x1;
-  x2 = (cos(theta) * x2) - (sin(theta) * x3);
-  x3 = (sin(theta) * x2) + (cos(theta) * x3);
-  }
-
-  void rotateAroundY(float& x1, float& x2, float& x3, double& theta) {
-  x1 = (cos(theta) * x1) + (sin(theta) * x3);
-  x2 = x2;
-  x3 = (-sin(theta) * x1) + (cos(theta) * x3);
-  }
-
-  void rotateAroundZ(double& x1, double& x2, double& x3, double& theta) {
-  x1 = (cos(theta) * x1) - (sin(theta) * x2);
-  x2 = (sin(theta) * x1) + (cos(theta) * x2);
-  x3 = x3;
-  }
-*/
 
 void running() {
   blink_async();
@@ -404,6 +410,8 @@ double q1;
 double q2;
 double q3;
 double q4;
+Quaterniond ahrsQ;
+Vector3d euler = Vector3d(0, 0, 0);
 double resultQ1;
 double resultQ2;
 double resultQ3;
@@ -535,6 +543,14 @@ void runPositionUpdate() {
         Serial.print(" qy = "); Serial.print(*(getQ() + 2));
         Serial.print(" qz = "); Serial.println(*(getQ() + 3));
       }
+      
+      /*
+        https://robotics.stackexchange.com/questions/15264/how-to-rotate-a-rotation-quaternion-in-the-body-frame-to-a-rotation-quaternion-i
+        here, multiply qs (starting orientation) by qr (rotation) to get qs1 (corrected orientation)
+        Create direction vector from: https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
+      */
+      ahrsQ = Quaterniond(*getQ(), *(getQ() + 1), *(getQ() + 2), *(getQ() + 3));
+      ahrsQ *= rotationQ;
 
       // Define output variables from updated quaternion---these are Tait-Bryan
       // angles, commonly used in aircraft orientation. In this coordinate system,
@@ -553,28 +569,34 @@ void runPositionUpdate() {
       // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
       // which has additional links.
 
-      q1 = *getQ();
-      q2 = *(getQ() + 1);
-      q3 = *(getQ() + 2);
-      q4 = *(getQ() + 3);
+//      original code
+//      myIMU.yaw   = atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ()
+//                                  * *(getQ() + 3)), *getQ() * *getQ() + *(getQ() + 1)
+//                          * *(getQ() + 1) - *(getQ() + 2) * *(getQ() + 2) - *(getQ() + 3)
+//                          * *(getQ() + 3));
+//      myIMU.pitch = -asin(2.0f * (*(getQ() + 1) * *(getQ() + 3) - *getQ()
+//                                  * *(getQ() + 2)));
+//      myIMU.roll  = atan2(2.0f * (*getQ() * *(getQ() + 1) + *(getQ() + 2)
+//                                  * *(getQ() + 3)), *getQ() * *getQ() - *(getQ() + 1)
+//                          * *(getQ() + 1) - *(getQ() + 2) * *(getQ() + 2) + *(getQ() + 3)
+//                          * *(getQ() + 3));
 
-      resultQ1 = ((q1 * rotation_q1) - (q2 * rotation_q2) - (q3 * rotation_q3) - (q4 * rotation_q4));
-      resultQ2 = ((q1 * rotation_q2) + (q2 * rotation_q1) + (q3 * rotation_q4) - (q4 * rotation_q3));
-      resultQ3 = ((q1 * rotation_q3) - (q2 * rotation_q4) + (q3 * rotation_q1) + (q4 * rotation_q2));
-      resultQ4 = ((q1 * rotation_q4) + (q2 * rotation_q3) - (q3 * rotation_q2) + (q4 * rotation_q1));
+        // adapted to use eigen quaternion
+        myIMU.yaw   = atan2(2.0f * (ahrsQ.x() * ahrsQ.y() + ahrsQ.w()
+                                  * ahrsQ.z()), ahrsQ.w() * ahrsQ.w() + ahrsQ.x()
+                          * ahrsQ.x() - ahrsQ.y() * ahrsQ.y() - ahrsQ.z()
+                          * ahrsQ.z());
+        myIMU.pitch = -asin(2.0f * (ahrsQ.x() * ahrsQ.z() - ahrsQ.w()
+                                    * ahrsQ.y()));
+        myIMU.roll  = atan2(2.0f * (ahrsQ.w() * ahrsQ.x() + ahrsQ.y()
+                                  * ahrsQ.z()), ahrsQ.w() * ahrsQ.w() - ahrsQ.x()
+                          * ahrsQ.x() - ahrsQ.y() * ahrsQ.y() + ahrsQ.z()
+                          * ahrsQ.z());
 
-      /*
-        https://robotics.stackexchange.com/questions/15264/how-to-rotate-a-rotation-quaternion-in-the-body-frame-to-a-rotation-quaternion-i
-        TODO: here, multiply qs (starting orientation) by qr (rotation) to get qs1 (corrected orientation)
-        Create direction vector from: https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
-      */
-
-      myIMU.yaw   = atan2(2.0f * (resultQ2 * resultQ3 + resultQ1 * resultQ4), resultQ1 * resultQ1 + resultQ2
-                          * resultQ2 - resultQ3 * resultQ3 - resultQ4 * resultQ4);
-      myIMU.pitch = -asin(2.0f * (resultQ2 * resultQ4 - resultQ1 * resultQ3));
-      myIMU.roll  = atan2(2.0f * (resultQ1 * resultQ2 + resultQ3
-                                  * resultQ4), resultQ1 * resultQ1 - resultQ2
-                          * resultQ2 - resultQ3 * resultQ3 + resultQ4 * resultQ4);
+//      euler = ahrsQ.toRotationMatrix().eulerAngles(0, 1, 2);
+//      myIMU.yaw   = euler[0];                         
+//      myIMU.pitch = euler[1];
+//      myIMU.roll  = euler[2];
 
       myIMU.pitch *= RAD_TO_DEG;
       myIMU.yaw   *= RAD_TO_DEG;
@@ -594,9 +616,9 @@ void runPositionUpdate() {
         Serial.print(", ");
         Serial.println(myIMU.roll, 1);
 
-        //        Serial.print("rate = ");
-        //        Serial.print((float)myIMU.sumCount / myIMU.sum, 2);
-        //        Serial.println(" Hz");
+        Serial.print("rate = ");
+        Serial.print((float)myIMU.sumCount / myIMU.sum, 2);
+        Serial.println(" Hz");
       }
       // With these settings the filter is updating at a ~145 Hz rate using the
       // Madgwick scheme and >200 Hz using the Mahony scheme even though the
@@ -623,7 +645,7 @@ void runPositionUpdate() {
 
 unsigned long lastLoop = 0;
 void loop()
-{
+{ 
   runPositionUpdate();
   calibration();
 }
