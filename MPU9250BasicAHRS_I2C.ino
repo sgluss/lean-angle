@@ -235,11 +235,17 @@ void calibration()
 
 Matrix3f rotationMatrix;
 void setRotationMatrix(Vector3d& right, Vector3d& up, Vector3d& forward) {  
+  /*
+   * ended up using this format: https://gamedev.stackexchange.com/questions/45298/convert-orientation-vec3-to-a-rotation-matrix
+   * but had to flip down to up, and right to left.
+   */
+  up= -up;
   right = -right;
-  
-  rotationMatrix << right[0], forward[0], up[0],
-                    right[1], forward[1], up[1],
-                    right[2], forward[2], up[2];
+
+  rotationMatrix << forward[0], right[0], up[0],
+                    forward[1], right[1], up[1],
+                    forward[2], right[2], up[2];
+                    
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
   rotationMatrix.col(2).normalize();
