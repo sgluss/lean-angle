@@ -256,7 +256,7 @@ void setRotationQuaternion(Vector3d& right, Vector3d& up, Vector3d& forward) {
   setRotationMatrix(right, up, forward);
 
   Matrix3f mat = rotationMatrix;
-    
+  
   rotation_q1 = sqrt(1.0 + mat(0, 0) + mat(1, 1) + mat(2, 2)) / 2.0;
   double w4 = (4.0 * rotation_q1);
   rotation_q2 = (mat(2, 1) - mat(1, 2)) / w4 ;
@@ -342,6 +342,8 @@ void calGravRefReady() {
 // components of position and velocity vectors
 Vector3d positionVector = Vector3d(0.0, 0.0, 0.0);
 Vector3d velocityVector = Vector3d(0.0, 0.0, 0.0);
+double projectionMagnitude = 0.0;
+double angleToProjection = 0.0;
 unsigned long now;
 unsigned long diff;
 void calMoving() {
@@ -368,7 +370,8 @@ void calMoving() {
 
   // run this stage for 2 seconds
   if (now > (movingStart + (2000000))) {
-    magnitude = sqrt((positionVector[0] * positionVector[0]) + (positionVector[1] * positionVector[1]) + (positionVector[2] * positionVector[2]));
+    magnitude = positionVector.norm();
+    
     Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
     Serial.print("End: "); Serial.print(now); Serial.print("\n");
     Serial.print("Moved a total of: "); Serial.print(positionVector[0], 6); Serial.print("x, ");
@@ -378,11 +381,16 @@ void calMoving() {
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[RUNNING]); Serial.print("\n");
 
     setForwardProjection(up, positionVector);
+    projectionMagnitude = forwardProjection.norm();
     Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardProjection[0], 6); Serial.print("x, ");
     Serial.print(forwardProjection[1], 6); Serial.print("y, ");
     Serial.print(forwardProjection[2], 6); Serial.print("z\n");
-    Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
+    Serial.print("Magnitude: "); Serial.print(projectionMagnitude, 6); Serial.print("\n");
 
+    angleToProjection = acos(projectionMagnitude / magnitude);
+    angleToProjection *= RAD_TO_DEG;
+    Serial.print("Angle between measured forward and forward projection: "); Serial.print(angleToProjection, 6); Serial.print("\n");
+    
     setRotationQuaternion(rightVector, up, forwardProjection);
     mode = RUNNING;
   }
@@ -569,18 +577,6 @@ void runPositionUpdate() {
       // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
       // which has additional links.
 
-//      original code
-//      myIMU.yaw   = atan2(2.0f * (*(getQ() + 1) * *(getQ() + 2) + *getQ()
-//                                  * *(getQ() + 3)), *getQ() * *getQ() + *(getQ() + 1)
-//                          * *(getQ() + 1) - *(getQ() + 2) * *(getQ() + 2) - *(getQ() + 3)
-//                          * *(getQ() + 3));
-//      myIMU.pitch = -asin(2.0f * (*(getQ() + 1) * *(getQ() + 3) - *getQ()
-//                                  * *(getQ() + 2)));
-//      myIMU.roll  = atan2(2.0f * (*getQ() * *(getQ() + 1) + *(getQ() + 2)
-//                                  * *(getQ() + 3)), *getQ() * *getQ() - *(getQ() + 1)
-//                          * *(getQ() + 1) - *(getQ() + 2) * *(getQ() + 2) + *(getQ() + 3)
-//                          * *(getQ() + 3));
-
         // adapted to use eigen quaternion
         myIMU.yaw   = atan2(2.0f * (ahrsQ.x() * ahrsQ.y() + ahrsQ.w()
                                   * ahrsQ.z()), ahrsQ.w() * ahrsQ.w() + ahrsQ.x()
@@ -592,11 +588,6 @@ void runPositionUpdate() {
                                   * ahrsQ.z()), ahrsQ.w() * ahrsQ.w() - ahrsQ.x()
                           * ahrsQ.x() - ahrsQ.y() * ahrsQ.y() + ahrsQ.z()
                           * ahrsQ.z());
-
-//      euler = ahrsQ.toRotationMatrix().eulerAngles(0, 1, 2);
-//      myIMU.yaw   = euler[0];                         
-//      myIMU.pitch = euler[1];
-//      myIMU.roll  = euler[2];
 
       myIMU.pitch *= RAD_TO_DEG;
       myIMU.yaw   *= RAD_TO_DEG;
