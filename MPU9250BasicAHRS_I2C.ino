@@ -235,16 +235,12 @@ void calibration()
 
 Matrix3f rotationMatrix;
 void setRotationMatrix(Vector3d& right, Vector3d& up, Vector3d& forward) {  
-  /*
-   * ended up using this format: https://gamedev.stackexchange.com/questions/45298/convert-orientation-vec3-to-a-rotation-matrix
-   * but had to flip down to up, and right to left.
-   */
-  up= -up;
-  right = -right;
 
-  rotationMatrix << forward[0], right[0], up[0],
-                    forward[1], right[1], up[1],
-                    forward[2], right[2], up[2];
+  right = -right;
+  
+  rotationMatrix << right[0], forward[0], up[0],
+                    right[1], forward[1], up[1],
+                    right[2], forward[2], up[2];
                     
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
@@ -393,7 +389,7 @@ void calMoving() {
     Serial.print(forwardProjection[2], 6); Serial.print("z\n");
     Serial.print("Magnitude: "); Serial.print(projectionMagnitude, 6); Serial.print("\n");
 
-    angleToProjection = acos(projectionMagnitude / magnitude);
+    angleToProjection = acos(positionVector.dot(forwardProjection) / (projectionMagnitude * magnitude));
     angleToProjection *= RAD_TO_DEG;
     Serial.print("Angle between measured forward and forward projection: "); Serial.print(angleToProjection, 6); Serial.print("\n");
     
