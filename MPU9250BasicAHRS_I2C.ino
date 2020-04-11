@@ -86,7 +86,7 @@ void setup()
   // TWBR = 12;  // 400 kbit/sec I2C speed
   Serial.begin(115200);
 
-  while (!Serial) {};
+  while(!Serial){};
 
   // Set up the interrupt pin, its set as active high, push-pull
   pinMode(intPin, INPUT);
@@ -237,9 +237,9 @@ Matrix3f rotationMatrix;
 void setRotationMatrix(Vector3d& right, Vector3d& up, Vector3d& forward) {  
   right = -right;
   
-  rotationMatrix << right[0], up[0], forward[0],
-                    right[1], up[1], forward[1],
-                    right[2], up[2], forward[2];
+  rotationMatrix << right[0], forward[0], up[0],
+                    right[1], forward[1], up[1],
+                    right[2], forward[2], up[2];
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
   rotationMatrix.col(2).normalize();
@@ -366,8 +366,8 @@ void calMoving() {
   positionVector[1] += (velocityVector[1] * (diff * 0.0000001));
   positionVector[2] += (velocityVector[2] * (diff * 0.0000001));
 
-  // run this stage for 3 seconds
-  if (now > (movingStart + (3000000))) {
+  // run this stage for 2 seconds
+  if (now > (movingStart + (2000000))) {
     magnitude = sqrt((positionVector[0] * positionVector[0]) + (positionVector[1] * positionVector[1]) + (positionVector[2] * positionVector[2]));
     Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
     Serial.print("End: "); Serial.print(now); Serial.print("\n");
