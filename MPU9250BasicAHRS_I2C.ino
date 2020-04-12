@@ -234,13 +234,22 @@ void calibration()
 }
 
 Matrix3f rotationMatrix;
+// http://renderdan.blogspot.com/2006/05/rotation-matrix-from-axis-vectors.html
 void setRotationMatrix(Vector3d& right, Vector3d& up, Vector3d& forward) {  
+// tait-bryan
+// x+ - forward
+// z+ - down
+// y - side
+// https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
 
-  right = -right;
-  
-  rotationMatrix << right[0], forward[0], up[0],
-                    right[1], forward[1], up[1],
-                    right[2], forward[2], up[2];
+  // closest to working with hardcoded calibration
+  // roll is correctly aligned and independent
+  // pitch is correctly aligned, but yaw is dependent on pitch
+  up = -up;
+  rotationMatrix << forward[0], forward[1], forward[2],
+                    right[0], right[1], right[2],                      
+                    up[0], up[1], up[2];   
+  rotationMatrix = rotationMatrix.inverse();
                     
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
@@ -254,9 +263,7 @@ double rotation_q2 = 0.0;
 double rotation_q3 = 0.0;
 double rotation_q4 = 0.0;
 Quaterniond rotationQ = Quaterniond(1.0, 0.0, 0.0, 0.0);
-void setRotationQuaternion(Vector3d& right, Vector3d& up, Vector3d& forward) {
-  setRotationMatrix(right, up, forward);
-
+void setRotationQuaternionFromRotationMatrix() {
   Matrix3f mat = rotationMatrix;
   
   rotation_q1 = sqrt(1.0 + mat(0, 0) + mat(1, 1) + mat(2, 2)) / 2.0;
@@ -329,9 +336,9 @@ void calGravRefReady() {
   magnitude = gravCorrected.norm();
 
   // debug print accel magnitude
-  if (millis() % 20 == 0) {
-    Serial.print("current accel magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
-  }
+  //  if (millis() % 20 == 0) {
+  //    Serial.print("current accel magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
+  //  }
 
   if (magnitude > 0.02) {
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_MOVING]); Serial.print("\n");
@@ -372,6 +379,10 @@ void calMoving() {
 
   // run this stage for 2 seconds
   if (now > (movingStart + (2000000))) {
+    positionVector[0] = 0.0;
+    positionVector[1] = 1.0;
+    positionVector[2] = 0.0;
+    
     magnitude = positionVector.norm();
     
     Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
@@ -392,8 +403,9 @@ void calMoving() {
     angleToProjection = acos(positionVector.dot(forwardProjection) / (projectionMagnitude * magnitude));
     angleToProjection *= RAD_TO_DEG;
     Serial.print("Angle between measured forward and forward projection: "); Serial.print(angleToProjection, 6); Serial.print("\n");
-    
-    setRotationQuaternion(rightVector, up, forwardProjection);
+
+    setRotationMatrix(rightVector, up, forwardProjection);
+    setRotationQuaternionFromRotationMatrix();
     mode = RUNNING;
   }
 }
