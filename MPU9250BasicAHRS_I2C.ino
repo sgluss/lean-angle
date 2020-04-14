@@ -246,14 +246,6 @@ void setRotationMatrix(Vector3d& right, Vector3d& down, Vector3d& forward) {
                     forward[1], right[1], down[1],
                     forward[2], right[2], down[2];
                     
-  // closest to working with hardcoded calibration
-  // roll is correctly aligned and independent
-  // pitch is correctly aligned, but yaw is dependent on pitch
-//  rotationMatrix << forward[0], forward[1], forward[2],
-//                    right[0], right[1], right[2],                      
-//                    down[0], down[1], down[2];   
-//  rotationMatrix = rotationMatrix.inverse();
-                    
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
   rotationMatrix.col(2).normalize();
