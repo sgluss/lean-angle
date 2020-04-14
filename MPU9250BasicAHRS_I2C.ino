@@ -207,7 +207,7 @@ int buttonState = 0;
 int measureCount = 0;
 
 Vector3d grav;
-Vector3d up;
+Vector3d down;
 unsigned long buttonPress = 0;
 void calibration()
 {
@@ -235,21 +235,24 @@ void calibration()
 
 Matrix3f rotationMatrix;
 // http://renderdan.blogspot.com/2006/05/rotation-matrix-from-axis-vectors.html
-void setRotationMatrix(Vector3d& right, Vector3d& up, Vector3d& forward) {  
+void setRotationMatrix(Vector3d& right, Vector3d& down, Vector3d& forward) {  
 // tait-bryan
 // x+ - forward
 // z+ - down
 // y - side
 // https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
 
+  rotationMatrix << forward[0], right[0], down[0],
+                    forward[1], right[1], down[1],
+                    forward[2], right[2], down[2];
+                    
   // closest to working with hardcoded calibration
   // roll is correctly aligned and independent
   // pitch is correctly aligned, but yaw is dependent on pitch
-  up = -up;
-  rotationMatrix << forward[0], forward[1], forward[2],
-                    right[0], right[1], right[2],                      
-                    up[0], up[1], up[2];   
-  rotationMatrix = rotationMatrix.inverse();
+//  rotationMatrix << forward[0], forward[1], forward[2],
+//                    right[0], right[1], right[2],                      
+//                    down[0], down[1], down[2];   
+//  rotationMatrix = rotationMatrix.inverse();
                     
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
@@ -277,9 +280,9 @@ void setRotationQuaternionFromRotationMatrix() {
 Vector3d rightVector;
 Vector3d forwardProjection;
 // set projection of A onto B
-void setForwardProjection(const Vector3d& up, const Vector3d& forward) {
-  rightVector = Vector3d(forward.cross(up));
-  forwardProjection = Vector3d(up.cross(rightVector));
+void setForwardProjection(const Vector3d& down, const Vector3d& forward) {
+  rightVector = Vector3d(down.cross(forward));
+  forwardProjection = Vector3d(rightVector.cross(down));
 }
 
 double magnitude;
@@ -301,18 +304,15 @@ void calInit() {
     measureCount += 1;
   } else {
     measureCount = 0;
-    up = -grav;
-    magnitude = grav.norm();
+    down[0] = grav[0];
+    down[1] = grav[1];
+    down[2] = grav[2];
+    magnitude = down.norm();
 
     Serial.print("Gravity magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
-    Serial.print("Gravity vector: "); Serial.print(grav[0], 6); Serial.print("x, ");
-    Serial.print(grav[1], 6); Serial.print("y, ");
-    Serial.print(grav[2], 6); Serial.print("z\n");
-
-    Serial.print("up magnitude: "); Serial.print(up.norm(), 4); Serial.print("\n");
-    Serial.print("up vector: "); Serial.print(up[0], 6); Serial.print("x, ");
-    Serial.print(up[1], 6); Serial.print("y, ");
-    Serial.print(up[2], 6); Serial.print("z\n");
+    Serial.print("Gravity vector: "); Serial.print(down[0], 6); Serial.print("x, ");
+    Serial.print(down[1], 6); Serial.print("y, ");
+    Serial.print(down[2], 6); Serial.print("z\n");
 
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_GRAV_REF_READY]); Serial.print("\n");
     mode = CAL_GRAV_REF_READY;
@@ -347,6 +347,20 @@ void calGravRefReady() {
     movingStart = previousTime;
   }
 }
+
+
+Vector3d gravLean = Vector3d(0.0, 0.0, 0.0);
+void calLeaning() {
+  digitalWrite(LEFT_LED_PIN, LOW);
+  digitalWrite(CENTER_LED_PIN, LOW);
+  digitalWrite(RIGHT_LED_PIN, LOW);
+  digitalWrite(RIGHT_LED_PIN, HIGH);
+
+  gravCorrected[0] = myIMU.ax - grav[0];
+  gravCorrected[1] = myIMU.ay - grav[1];
+  gravCorrected[2] = myIMU.az - grav[2];
+}
+
 
 // components of position and velocity vectors
 Vector3d positionVector = Vector3d(0.0, 0.0, 0.0);
@@ -393,7 +407,7 @@ void calMoving() {
     Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
     Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[RUNNING]); Serial.print("\n");
 
-    setForwardProjection(up, positionVector);
+    setForwardProjection(down, positionVector);
     projectionMagnitude = forwardProjection.norm();
     Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardProjection[0], 6); Serial.print("x, ");
     Serial.print(forwardProjection[1], 6); Serial.print("y, ");
@@ -404,7 +418,7 @@ void calMoving() {
     angleToProjection *= RAD_TO_DEG;
     Serial.print("Angle between measured forward and forward projection: "); Serial.print(angleToProjection, 6); Serial.print("\n");
 
-    setRotationMatrix(rightVector, up, forwardProjection);
+    setRotationMatrix(rightVector, down, forwardProjection);
     setRotationQuaternionFromRotationMatrix();
     mode = RUNNING;
   }
