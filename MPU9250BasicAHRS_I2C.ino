@@ -228,7 +228,7 @@ void calibration()
       break;
     case CAL_GRAV_REF_READY: calGravRefReady();
       break;
-    case CAL_MOVING: calMoving();
+    case CAL_MOVING: calLeaning();
       break;
   }
 }
@@ -277,7 +277,7 @@ void setForwardProjection(const Vector3d& down, const Vector3d& forward) {
   forwardProjection = Vector3d(rightVector.cross(down));
 }
 
-double magnitude;
+double downMagnitude;
 unsigned long time = 0;
 void calInit() {
   digitalWrite(LEFT_LED_PIN, LOW);
@@ -299,9 +299,9 @@ void calInit() {
     down[0] = grav[0];
     down[1] = grav[1];
     down[2] = grav[2];
-    magnitude = down.norm();
+    downMagnitude = down.norm();
 
-    Serial.print("Gravity magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
+    Serial.print("Gravity magnitude: "); Serial.print(downMagnitude, 4); Serial.print("\n");
     Serial.print("Gravity vector: "); Serial.print(down[0], 6); Serial.print("x, ");
     Serial.print(down[1], 6); Serial.print("y, ");
     Serial.print(down[2], 6); Serial.print("z\n");
@@ -312,18 +312,20 @@ void calInit() {
 }
 
 // Gravity corrected values
+double magnitude;
 Vector3d gravCorrected = Vector3d(0.0, 0.0, 0.0);
 unsigned long previousTime = 0;
 unsigned long movingStart = 0;
+int leanSamples = 0;
 void calGravRefReady() {
   digitalWrite(LEFT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, LOW);
   digitalWrite(RIGHT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, HIGH);
 
-  gravCorrected[0] = myIMU.ax - grav[0];
-  gravCorrected[1] = myIMU.ay - grav[1];
-  gravCorrected[2] = myIMU.az - grav[2];
+  gravCorrected[0] = myIMU.ax - down[0];
+  gravCorrected[1] = myIMU.ay - down[1];
+  gravCorrected[2] = myIMU.az - down[2];
 
   magnitude = gravCorrected.norm();
 
@@ -337,20 +339,53 @@ void calGravRefReady() {
     mode = CAL_MOVING;
     previousTime = micros();
     movingStart = previousTime;
+    leanSamples = 0;
   }
 }
 
 
-Vector3d gravLean = Vector3d(0.0, 0.0, 0.0);
+bool wasAdequatelyLeaned = false;
+double angleToDown = 0.0;
+double gravMagnitude = 0.0;
+double LEAN_THRESHOLD = 15 / RAD_TO_DEG; // only read values when grav vector deviates by more than this
+double LEAN_SAMPLES_COUNT = 1000.0;
+Vector3d sumLeanedGravity = Vector3d(0.0, 0.0, 0.0);
 void calLeaning() {
-  digitalWrite(LEFT_LED_PIN, LOW);
-  digitalWrite(CENTER_LED_PIN, LOW);
-  digitalWrite(RIGHT_LED_PIN, LOW);
-  digitalWrite(RIGHT_LED_PIN, HIGH);
+  grav[0] = myIMU.ax;
+  grav[1] = myIMU.ay;
+  grav[2] = myIMU.az;
 
-  gravCorrected[0] = myIMU.ax - grav[0];
-  gravCorrected[1] = myIMU.ay - grav[1];
-  gravCorrected[2] = myIMU.az - grav[2];
+  gravMagnitude = grav.norm();
+
+  angleToDown = acos(down.dot(grav) / (downMagnitude * gravMagnitude));
+
+  if (angleToDown > LEAN_THRESHOLD) {
+      sumLeanedGravity[0] += grav[0] / LEAN_SAMPLES_COUNT;
+      sumLeanedGravity[1] += grav[1] / LEAN_SAMPLES_COUNT;
+      sumLeanedGravity[2] += grav[2] / LEAN_SAMPLES_COUNT;
+      leanSamples += 1;
+      if (wasAdequatelyLeaned == false) {
+          digitalWrite(RIGHT_LED_PIN, HIGH);
+      }
+      wasAdequatelyLeaned = true;
+  }
+  else {
+      if (wasAdequatelyLeaned == true) {
+          digitalWrite(LEFT_LED_PIN, LOW);
+          digitalWrite(CENTER_LED_PIN, LOW);
+          digitalWrite(RIGHT_LED_PIN, LOW);
+      }
+      wasAdequatelyLeaned = false;
+  }
+  if (leanSamples >= LEAN_SAMPLES_COUNT) {
+      forwardProjection = Vector3d(down.cross(sumLeanedGravity));
+      rightVector = Vector3d(down.cross(forwardProjection));
+      
+      setRotationMatrix(rightVector, down, forwardProjection);
+      setRotationQuaternionFromRotationMatrix();
+      mode = RUNNING;
+  }
+  
 }
 
 
