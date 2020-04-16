@@ -56,6 +56,11 @@ int LEFT_LED_PIN = 10;
 int CENTER_LED_PIN = 9;
 int RIGHT_LED_PIN = 8;
 
+int PITCH_OUTPUT_PIN = 5;
+int ROLL_OUTPUT_PIN = 6;
+int LAT_G_OUTPUT_PIN = 3;
+int LONG_G_OUTPUT_PIN = 11;
+
 #define I2Cclock 400000
 #define I2Cport Wire
 #define MPU9250_ADDRESS MPU9250_ADDRESS_AD0   // Use either this line or the next to select which I2C address your device is using
@@ -385,6 +390,8 @@ void running() {
     return;  
   }
   lastUpdate = now;
+
+  update_analog_outputs();
   
   if (myIMU.roll > -90.0 && myIMU.roll < 90.0) {
     blink_async(LEFT_LED_PIN, 500, (-myIMU.roll) / 45.0);    
@@ -396,6 +403,22 @@ void running() {
     blink_async(CENTER_LED_PIN, 250, 0.5);
     blink_async(RIGHT_LED_PIN, 250, 0.5);
   }
+}
+
+float rollOutput;
+float pitchOutput;
+int lastAnalogOutUpdate = 0;
+void update_analog_outputs() {
+  now = millis();
+  if (now - lastAnalogOutUpdate < 10) { 
+    return;  
+  }
+  lastAnalogOutUpdate = now;
+  
+  rollOutput = (255.0 * (myIMU.roll + 90.0)) / 180.0;
+  pitchOutput = (255.0 * (myIMU.pitch + 90.0)) / 180.0;
+  analogWrite(ROLL_OUTPUT_PIN, rollOutput);
+  analogWrite(PITCH_OUTPUT_PIN, pitchOutput);
 }
 
 // interval: ms
@@ -597,7 +620,7 @@ void runPositionUpdate() {
       //      myIMU.yaw  -= 8.5;
       myIMU.roll *= RAD_TO_DEG;
 
-      if(SerialDebug)
+      //if(SerialDebug)
       {
         Serial.print("YPR: ");
         Serial.print(myIMU.yaw, 1);
