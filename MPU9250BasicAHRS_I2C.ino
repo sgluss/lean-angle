@@ -52,9 +52,9 @@ int intPin = 4;  // These can be changed, 2 and 3 are the Arduinos ext int pins
 int myLed  = 13;  // Set up pin 13 led for toggling
 
 int BUTTON_PIN = 7;
-int LEFT_LED_PIN = 8;
+int LEFT_LED_PIN = 10;
 int CENTER_LED_PIN = 9;
-int RIGHT_LED_PIN = 10;
+int RIGHT_LED_PIN = 8;
 
 #define I2Cclock 400000
 #define I2Cport Wire
@@ -64,15 +64,16 @@ int RIGHT_LED_PIN = 10;
 MPU9250 myIMU(MPU9250_ADDRESS, I2Cport, I2Cclock);
 
 enum Mode {
+  UNCALIBRATED,
   RUNNING,
   CAL_INIT,
   CAL_GRAV_REF_READY,
-  CAL_MOVING
+  CAL_LEANING
 };
 
-char* modeNames[] = {"RUNNING", "CAL_INIT", "CAL_GRAV_REF_READY", "CAL_MOVING"};
+char* modeNames[] = {"UNCALIBRATED", "RUNNING", "CAL_INIT", "CAL_GRAV_REF_READY", "CAL_LEANING"};
 
-Mode mode = RUNNING;
+Mode mode = UNCALIBRATED;
 
 void setup()
 {
@@ -80,7 +81,6 @@ void setup()
   pinMode(LEFT_LED_PIN, OUTPUT);
   pinMode(CENTER_LED_PIN, OUTPUT);
   pinMode(RIGHT_LED_PIN, OUTPUT);
-
 
   Wire.begin();
   // TWBR = 12;  // 400 kbit/sec I2C speed
@@ -222,13 +222,15 @@ void calibration()
   }
   switch (mode)
   {
+    case UNCALIBRATED: uncalibrated();
+      break;
     case RUNNING: running();
       break;
     case CAL_INIT: calInit();
       break;
     case CAL_GRAV_REF_READY: calGravRefReady();
       break;
-    case CAL_MOVING: calLeaning();
+    case CAL_LEANING: calLeaning();
       break;
   }
 }
@@ -269,14 +271,6 @@ void setRotationQuaternionFromRotationMatrix() {
   rotationQ = Quaterniond(rotation_q1, rotation_q2, rotation_q3, rotation_q4);
 }
 
-Vector3d rightVector;
-Vector3d forwardProjection;
-// set projection of A onto B
-void setForwardProjection(const Vector3d& down, const Vector3d& forward) {
-  rightVector = Vector3d(down.cross(forward));
-  forwardProjection = Vector3d(rightVector.cross(down));
-}
-
 double downMagnitude;
 unsigned long time = 0;
 void calInit() {
@@ -312,10 +306,6 @@ void calInit() {
 }
 
 // Gravity corrected values
-double magnitude;
-Vector3d gravCorrected = Vector3d(0.0, 0.0, 0.0);
-unsigned long previousTime = 0;
-unsigned long movingStart = 0;
 int leanSamples = 0;
 void calGravRefReady() {
   digitalWrite(LEFT_LED_PIN, LOW);
@@ -323,24 +313,9 @@ void calGravRefReady() {
   digitalWrite(RIGHT_LED_PIN, LOW);
   digitalWrite(CENTER_LED_PIN, HIGH);
 
-  gravCorrected[0] = myIMU.ax - down[0];
-  gravCorrected[1] = myIMU.ay - down[1];
-  gravCorrected[2] = myIMU.az - down[2];
-
-  magnitude = gravCorrected.norm();
-
-  // debug print accel magnitude
-  //  if (millis() % 20 == 0) {
-  //    Serial.print("current accel magnitude: "); Serial.print(magnitude, 4); Serial.print("\n");
-  //  }
-
-  if (magnitude > 0.02) {
-    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_MOVING]); Serial.print("\n");
-    mode = CAL_MOVING;
-    previousTime = micros();
-    movingStart = previousTime;
-    leanSamples = 0;
-  }
+  Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[CAL_LEANING]); Serial.print("\n");
+  mode = CAL_LEANING;
+  leanSamples = 0;
 }
 
 
@@ -350,6 +325,8 @@ double gravMagnitude = 0.0;
 double LEAN_THRESHOLD = 15 / RAD_TO_DEG; // only read values when grav vector deviates by more than this
 double LEAN_SAMPLES_COUNT = 1000.0;
 Vector3d sumLeanedGravity = Vector3d(0.0, 0.0, 0.0);
+Vector3d right;
+Vector3d forward;
 void calLeaning() {
   grav[0] = myIMU.ax;
   grav[1] = myIMU.ay;
@@ -371,101 +348,68 @@ void calLeaning() {
   }
   else {
       if (wasAdequatelyLeaned == true) {
-          digitalWrite(LEFT_LED_PIN, LOW);
-          digitalWrite(CENTER_LED_PIN, LOW);
           digitalWrite(RIGHT_LED_PIN, LOW);
       }
       wasAdequatelyLeaned = false;
   }
   if (leanSamples >= LEAN_SAMPLES_COUNT) {
-      forwardProjection = Vector3d(down.cross(sumLeanedGravity));
-      rightVector = Vector3d(down.cross(forwardProjection));
+      forward = Vector3d(down.cross(sumLeanedGravity));
+      right = Vector3d(down.cross(forward));
       
-      setRotationMatrix(rightVector, down, forwardProjection);
+      setRotationMatrix(right, down, forward);
       setRotationQuaternionFromRotationMatrix();
       mode = RUNNING;
   }
-  
 }
 
-
-// components of position and velocity vectors
-Vector3d positionVector = Vector3d(0.0, 0.0, 0.0);
-Vector3d velocityVector = Vector3d(0.0, 0.0, 0.0);
 double projectionMagnitude = 0.0;
 double angleToProjection = 0.0;
-unsigned long now;
-unsigned long diff;
-void calMoving() {
-  digitalWrite(LEFT_LED_PIN, LOW);
-  digitalWrite(CENTER_LED_PIN, LOW);
-  digitalWrite(RIGHT_LED_PIN, LOW);
-  digitalWrite(RIGHT_LED_PIN, HIGH);
 
-  now = micros();
-  diff = now - previousTime;
-  previousTime = now;
-
-  gravCorrected[0] = myIMU.ax - grav[0];
-  gravCorrected[1] = myIMU.ay - grav[1];
-  gravCorrected[2] = myIMU.az - grav[2];
-
-  velocityVector[0] += (gravCorrected[0] * (diff * 0.0000001));
-  velocityVector[1] += (gravCorrected[1] * (diff * 0.0000001));
-  velocityVector[2] += (gravCorrected[2] * (diff * 0.0000001));
-
-  positionVector[0] += (velocityVector[0] * (diff * 0.0000001));
-  positionVector[1] += (velocityVector[1] * (diff * 0.0000001));
-  positionVector[2] += (velocityVector[2] * (diff * 0.0000001));
-
-  // run this stage for 2 seconds
-  if (now > (movingStart + (2000000))) {
-    positionVector[0] = 0.0;
-    positionVector[1] = 1.0;
-    positionVector[2] = 0.0;
-    
-    magnitude = positionVector.norm();
-    
-    Serial.print("Start: "); Serial.print(movingStart); Serial.print("\n");
-    Serial.print("End: "); Serial.print(now); Serial.print("\n");
-    Serial.print("Moved a total of: "); Serial.print(positionVector[0], 6); Serial.print("x, ");
-    Serial.print(positionVector[1], 6); Serial.print("y, ");
-    Serial.print(positionVector[2], 6); Serial.print("z\n");
-    Serial.print("Magnitude: "); Serial.print(magnitude, 6); Serial.print("\n");
-    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to "); Serial.print(modeNames[RUNNING]); Serial.print("\n");
-
-    setForwardProjection(down, positionVector);
-    projectionMagnitude = forwardProjection.norm();
-    Serial.print("Projection of forward vector onto gravity-normal plane: "); Serial.print(forwardProjection[0], 6); Serial.print("x, ");
-    Serial.print(forwardProjection[1], 6); Serial.print("y, ");
-    Serial.print(forwardProjection[2], 6); Serial.print("z\n");
-    Serial.print("Magnitude: "); Serial.print(projectionMagnitude, 6); Serial.print("\n");
-
-    angleToProjection = acos(positionVector.dot(forwardProjection) / (projectionMagnitude * magnitude));
-    angleToProjection *= RAD_TO_DEG;
-    Serial.print("Angle between measured forward and forward projection: "); Serial.print(angleToProjection, 6); Serial.print("\n");
-
-    setRotationMatrix(rightVector, down, forwardProjection);
-    setRotationQuaternionFromRotationMatrix();
-    mode = RUNNING;
+int lastUpdate = millis();
+int now;
+void uncalibrated() {
+  now = millis();
+  if (now - lastUpdate < 50) { 
+    return;  
   }
+  lastUpdate = now;
+  
+  blink_async(LEFT_LED_PIN, 750, 0.5);
+  blink_async(CENTER_LED_PIN, 750, 0.5);
+  blink_async(RIGHT_LED_PIN, 750, 0.5);
 }
 
 void running() {
-  blink_async();
+  now = millis();
+  if (now - lastUpdate < 50) { 
+    return;  
+  }
+  lastUpdate = now;
+  
+  if (myIMU.roll > -90.0 && myIMU.roll < 90.0) {
+    blink_async(LEFT_LED_PIN, 500, (-myIMU.roll) / 45.0);    
+    blink_async(RIGHT_LED_PIN, 500, myIMU.roll / 45.0);
+    blink_async(CENTER_LED_PIN, 500, (45.0 - abs(myIMU.roll)) / 45.0);
+    
+  } else {
+    blink_async(LEFT_LED_PIN, 250, 0.5);
+    blink_async(CENTER_LED_PIN, 250, 0.5);
+    blink_async(RIGHT_LED_PIN, 250, 0.5);
+  }
 }
 
-void blink_async() {
+// interval: ms
+// dutyCycle: 0.0 - 1.0 (1.0 is full on, 0.0 is full off)
+void blink_async(int ledPin, int interval, float dutyCycle) {
+  dutyCycle = dutyCycle > 1.0 ? 1.0 : dutyCycle;
+  dutyCycle = dutyCycle < 0.0 ? 0.0 : dutyCycle;
+  
   time = millis();
-  if ((time / 1000) % 2 == 0)
+  if ((time % interval) > (interval * dutyCycle))
   {
-    digitalWrite(LEFT_LED_PIN, LOW);
-    digitalWrite(CENTER_LED_PIN, LOW);
-    digitalWrite(RIGHT_LED_PIN, LOW);
+    digitalWrite(ledPin, LOW);
   } else {
-    digitalWrite(LEFT_LED_PIN, HIGH);
-    digitalWrite(CENTER_LED_PIN, HIGH);
-    digitalWrite(RIGHT_LED_PIN, HIGH);
+    digitalWrite(ledPin, HIGH);
   }
 }
 
@@ -653,7 +597,7 @@ void runPositionUpdate() {
       //      myIMU.yaw  -= 8.5;
       myIMU.roll *= RAD_TO_DEG;
 
-      //     if(SerialDebug)
+      if(SerialDebug)
       {
         Serial.print("YPR: ");
         Serial.print(myIMU.yaw, 1);
