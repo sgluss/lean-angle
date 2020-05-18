@@ -41,6 +41,7 @@
 #include <Eigen30.h>
 #include <EigenAVR.h>
 #include <Eigen/Dense>
+#include <EEPROM.h>
 
 using namespace Eigen;
 
@@ -91,7 +92,7 @@ void setup()
   // TWBR = 12;  // 400 kbit/sec I2C speed
   Serial.begin(115200);
 
-  while(!Serial){};
+  while (!Serial) {};
 
   // Set up the interrupt pin, its set as active high, push-pull
   pinMode(intPin, INPUT);
@@ -113,17 +114,17 @@ void setup()
     // Start by performing self test and reporting values
     myIMU.MPU9250SelfTest(myIMU.selfTest);
     Serial.print(F("x-axis self test: acceleration trim within : "));
-    Serial.print(myIMU.selfTest[0],1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[0], 1); Serial.println("% of factory value");
     Serial.print(F("y-axis self test: acceleration trim within : "));
-    Serial.print(myIMU.selfTest[1],1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[1], 1); Serial.println("% of factory value");
     Serial.print(F("z-axis self test: acceleration trim within : "));
-    Serial.print(myIMU.selfTest[2],1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[2], 1); Serial.println("% of factory value");
     Serial.print(F("x-axis self test: gyration trim within : "));
-    Serial.print(myIMU.selfTest[3],1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[3], 1); Serial.println("% of factory value");
     Serial.print(F("y-axis self test: gyration trim within : "));
-    Serial.print(myIMU.selfTest[4],1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[4], 1); Serial.println("% of factory value");
     Serial.print(F("z-axis self test: gyration trim within : "));
-    Serial.print(myIMU.selfTest[5],1); Serial.println("% of factory value");
+    Serial.print(myIMU.selfTest[5], 1); Serial.println("% of factory value");
 
     // Calibrate gyro and accelerometers, load biases in bias registers
     myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
@@ -183,9 +184,9 @@ void setup()
     Serial.println(myIMU.magScale[0]);
     Serial.println(myIMU.magScale[1]);
     Serial.println(myIMU.magScale[2]);
-//    delay(2000); // Add delay to see results before serial spew of data
+    //    delay(2000); // Add delay to see results before serial spew of data
 
-    if(SerialDebug)
+    if (SerialDebug)
     {
       Serial.println("Magnetometer:");
       Serial.print("X-Axis sensitivity adjustment value ");
@@ -206,25 +207,59 @@ void setup()
     Serial.flush();
     abort();
   }
+
+  bool got_quat = get_rotation_quaternion();
+  if (got_quat) {
+    Serial.println("Initiated quaternion, in mode RUNNING");
+    mode = RUNNING;
+  } else {
+    Serial.println("No rotation quaternion, in mode UNCALIBRATED");
+    mode = UNCALIBRATED;
+  }
 }
 
+int oldButtonState = 0;
 int buttonState = 0;
 int measureCount = 0;
 
 Vector3d grav;
 Vector3d down;
 unsigned long buttonPress = 0;
+unsigned long buttonRelease = 0;
+bool doButtonAction = false;
 void calibration()
 {
   buttonState = digitalRead(BUTTON_PIN);
-  if (buttonState == 1 && mode != CAL_INIT) {
-    Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to CAL_INIT\n");
-    mode = CAL_INIT;
 
+  if (buttonState == 1 && oldButtonState == 0) {
+    Serial.println("Button pressed");
     buttonPress = millis();
-    grav = Vector3d(0.0, 0.0, 0.0);
-    return;
   }
+  if (buttonState == 0 && oldButtonState == 1) {
+    Serial.println("Button released");
+    doButtonAction = true;
+    buttonRelease = millis();
+  }
+  oldButtonState = buttonState;
+
+  if (doButtonAction) {
+    if (buttonRelease - buttonPress < 3000) {
+      Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to CAL_INIT\n");
+      mode = CAL_INIT;
+  
+      buttonPress = millis();
+      buttonRelease = buttonPress;
+      doButtonAction = false;
+      grav = Vector3d(0.0, 0.0, 0.0);
+      return;
+    } else {
+      reset_eeprom();
+      Serial.print("Mode switch from "); Serial.print(modeNames[mode]); Serial.print(" to UNCALIBRATED\n");
+      mode = UNCALIBRATED;
+    }
+  }
+  doButtonAction = false;
+  
   switch (mode)
   {
     case UNCALIBRATED: uncalibrated();
@@ -242,22 +277,22 @@ void calibration()
 
 Matrix3f rotationMatrix;
 // http://renderdan.blogspot.com/2006/05/rotation-matrix-from-axis-vectors.html
-void setRotationMatrix(Vector3d& right, Vector3d& down, Vector3d& forward) {  
-// tait-bryan
-// x+ - forward
-// z+ - down
-// y - side
-// https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
+void setRotationMatrix(Vector3d& right, Vector3d& down, Vector3d& forward) {
+  // tait-bryan
+  // x+ - forward
+  // z+ - down
+  // y - side
+  // https://stackoverflow.com/questions/18558910/direction-vector-to-rotation-matrix
 
   rotationMatrix << forward[0], right[0], down[0],
-                    forward[1], right[1], down[1],
-                    forward[2], right[2], down[2];
-                    
+                 forward[1], right[1], down[1],
+                 forward[2], right[2], down[2];
+
   rotationMatrix.col(0).normalize();
   rotationMatrix.col(1).normalize();
   rotationMatrix.col(2).normalize();
 
-  Serial.print("Generated rotation matrix! Determinant: ");Serial.print(rotationMatrix.determinant());Serial.print("\n");
+  Serial.print("Generated rotation matrix! Determinant: "); Serial.print(rotationMatrix.determinant()); Serial.print("\n");
 }
 
 double rotation_q1 = 0.0;
@@ -267,7 +302,7 @@ double rotation_q4 = 0.0;
 Quaterniond rotationQ = Quaterniond(1.0, 0.0, 0.0, 0.0);
 void setRotationQuaternionFromRotationMatrix() {
   Matrix3f mat = rotationMatrix;
-  
+
   rotation_q1 = sqrt(1.0 + mat(0, 0) + mat(1, 1) + mat(2, 2)) / 2.0;
   double w4 = (4.0 * rotation_q1);
   rotation_q2 = (mat(2, 1) - mat(1, 2)) / w4 ;
@@ -342,28 +377,29 @@ void calLeaning() {
   angleToDown = acos(down.dot(grav) / (downMagnitude * gravMagnitude));
 
   if (angleToDown > LEAN_THRESHOLD) {
-      sumLeanedGravity[0] += grav[0] / LEAN_SAMPLES_COUNT;
-      sumLeanedGravity[1] += grav[1] / LEAN_SAMPLES_COUNT;
-      sumLeanedGravity[2] += grav[2] / LEAN_SAMPLES_COUNT;
-      leanSamples += 1;
-      if (wasAdequatelyLeaned == false) {
-          digitalWrite(RIGHT_LED_PIN, HIGH);
-      }
-      wasAdequatelyLeaned = true;
+    sumLeanedGravity[0] += grav[0] / LEAN_SAMPLES_COUNT;
+    sumLeanedGravity[1] += grav[1] / LEAN_SAMPLES_COUNT;
+    sumLeanedGravity[2] += grav[2] / LEAN_SAMPLES_COUNT;
+    leanSamples += 1;
+    if (wasAdequatelyLeaned == false) {
+      digitalWrite(RIGHT_LED_PIN, HIGH);
+    }
+    wasAdequatelyLeaned = true;
   }
   else {
-      if (wasAdequatelyLeaned == true) {
-          digitalWrite(RIGHT_LED_PIN, LOW);
-      }
-      wasAdequatelyLeaned = false;
+    if (wasAdequatelyLeaned == true) {
+      digitalWrite(RIGHT_LED_PIN, LOW);
+    }
+    wasAdequatelyLeaned = false;
   }
   if (leanSamples >= LEAN_SAMPLES_COUNT) {
-      forward = Vector3d(down.cross(sumLeanedGravity));
-      right = Vector3d(down.cross(forward));
-      
-      setRotationMatrix(right, down, forward);
-      setRotationQuaternionFromRotationMatrix();
-      mode = RUNNING;
+    forward = Vector3d(down.cross(sumLeanedGravity));
+    right = Vector3d(down.cross(forward));
+
+    setRotationMatrix(right, down, forward);
+    setRotationQuaternionFromRotationMatrix();
+    store_rotation_quaternion();
+    mode = RUNNING;
   }
 }
 
@@ -374,11 +410,11 @@ int lastUpdate = millis();
 int now;
 void uncalibrated() {
   now = millis();
-  if (now - lastUpdate < 50) { 
-    return;  
+  if (now - lastUpdate < 50) {
+    return;
   }
   lastUpdate = now;
-  
+
   blink_async(LEFT_LED_PIN, 750, 0.5);
   blink_async(CENTER_LED_PIN, 750, 0.5);
   blink_async(RIGHT_LED_PIN, 750, 0.5);
@@ -386,18 +422,18 @@ void uncalibrated() {
 
 void running() {
   now = millis();
-  if (now - lastUpdate < 50) { 
-    return;  
+  if (now - lastUpdate < 50) {
+    return;
   }
   lastUpdate = now;
 
   update_analog_outputs();
-  
+
   if (myIMU.roll > -90.0 && myIMU.roll < 90.0) {
-    blink_async(LEFT_LED_PIN, 500, (-myIMU.roll) / 45.0);    
+    blink_async(LEFT_LED_PIN, 500, (-myIMU.roll) / 45.0);
     blink_async(RIGHT_LED_PIN, 500, myIMU.roll / 45.0);
     blink_async(CENTER_LED_PIN, 500, (45.0 - abs(myIMU.roll)) / 45.0);
-    
+
   } else {
     blink_async(LEFT_LED_PIN, 250, 0.5);
     blink_async(CENTER_LED_PIN, 250, 0.5);
@@ -410,13 +446,19 @@ float pitchOutput;
 int lastAnalogOutUpdate = 0;
 void update_analog_outputs() {
   now = millis();
-  if (now - lastAnalogOutUpdate < 10) { 
-    return;  
+  if (now - lastAnalogOutUpdate < 10) {
+    return;
   }
   lastAnalogOutUpdate = now;
-  
+
   rollOutput = (255.0 * (myIMU.roll + 90.0)) / 180.0;
   pitchOutput = (255.0 * (myIMU.pitch + 90.0)) / 180.0;
+
+  rollOutput = rollOutput < 0.0 ? 0.0 : rollOutput;
+  rollOutput = rollOutput > 255.0 ? 255.0 : rollOutput;
+  pitchOutput = pitchOutput < 0.0 ? 0.0 : pitchOutput;
+  pitchOutput = pitchOutput > 255.0 ? 255.0 : pitchOutput;
+  
   analogWrite(ROLL_OUTPUT_PIN, rollOutput);
   analogWrite(PITCH_OUTPUT_PIN, pitchOutput);
 }
@@ -426,7 +468,7 @@ void update_analog_outputs() {
 void blink_async(int ledPin, int interval, float dutyCycle) {
   dutyCycle = dutyCycle > 1.0 ? 1.0 : dutyCycle;
   dutyCycle = dutyCycle < 0.0 ? 0.0 : dutyCycle;
-  
+
   time = millis();
   if ((time % interval) > (interval * dutyCycle))
   {
@@ -434,6 +476,36 @@ void blink_async(int ledPin, int interval, float dutyCycle) {
   } else {
     digitalWrite(ledPin, HIGH);
   }
+}
+
+void store_rotation_quaternion() {
+  int addr = 0;
+  EEPROM.put(addr, 0xD34DC0D3);
+  addr += sizeof(long);
+  EEPROM.put(addr, rotationQ);
+  addr += sizeof(Quaterniond);
+  Serial.println("Quaternion stored!");
+}
+
+bool get_rotation_quaternion() {
+  int addr = 0;
+  unsigned long flag = 0;
+  EEPROM.get(addr, flag);
+  Serial.print("Getting rotation quaternion, got flag value: ");Serial.print(flag);Serial.println();
+  if (flag != 0xD34DC0D3) {
+    return false;
+  }
+  
+  addr += sizeof(long);
+  EEPROM.get(addr, rotationQ);
+  return true;
+}
+
+// reset flag
+void reset_eeprom() {
+  int addr = 0;
+  Serial.println("Clearing EEPROM...");
+  EEPROM.put(addr, 0x00000000);
 }
 
 double q1;
@@ -573,7 +645,7 @@ void runPositionUpdate() {
         Serial.print(" qy = "); Serial.print(*(getQ() + 2));
         Serial.print(" qz = "); Serial.println(*(getQ() + 3));
       }
-      
+
       /*
         https://robotics.stackexchange.com/questions/15264/how-to-rotate-a-rotation-quaternion-in-the-body-frame-to-a-rotation-quaternion-i
         here, multiply qs (starting orientation) by qr (rotation) to get qs1 (corrected orientation)
@@ -599,14 +671,14 @@ void runPositionUpdate() {
       // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
       // which has additional links.
 
-        // adapted to use eigen quaternion
-        myIMU.yaw   = atan2(2.0f * (ahrsQ.x() * ahrsQ.y() + ahrsQ.w()
+      // adapted to use eigen quaternion
+      myIMU.yaw   = atan2(2.0f * (ahrsQ.x() * ahrsQ.y() + ahrsQ.w()
                                   * ahrsQ.z()), ahrsQ.w() * ahrsQ.w() + ahrsQ.x()
                           * ahrsQ.x() - ahrsQ.y() * ahrsQ.y() - ahrsQ.z()
                           * ahrsQ.z());
-        myIMU.pitch = -asin(2.0f * (ahrsQ.x() * ahrsQ.z() - ahrsQ.w()
-                                    * ahrsQ.y()));
-        myIMU.roll  = atan2(2.0f * (ahrsQ.w() * ahrsQ.x() + ahrsQ.y()
+      myIMU.pitch = -asin(2.0f * (ahrsQ.x() * ahrsQ.z() - ahrsQ.w()
+                                  * ahrsQ.y()));
+      myIMU.roll  = atan2(2.0f * (ahrsQ.w() * ahrsQ.x() + ahrsQ.y()
                                   * ahrsQ.z()), ahrsQ.w() * ahrsQ.w() - ahrsQ.x()
                           * ahrsQ.x() - ahrsQ.y() * ahrsQ.y() + ahrsQ.z()
                           * ahrsQ.z());
@@ -658,7 +730,7 @@ void runPositionUpdate() {
 
 unsigned long lastLoop = 0;
 void loop()
-{ 
+{
   runPositionUpdate();
   calibration();
 }
